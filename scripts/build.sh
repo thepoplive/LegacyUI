@@ -1,21 +1,21 @@
 #!/bin/bash
 # LegacyUI build script — no Theos, plain clang + ldid + dpkg-deb.
 #
-# Toolchain notes (iOS 8.4.1 / ARMv7):
-#  - Compile with the iPhoneOS10.3.sdk for linking.
-#  - Deployment target 8.4.1 makes ld64 emit LC_VERSION_MIN_IPHONEOS.
+# Toolchain notes (iOS 8.0+ / ARMv7):
+#  - Compile and link against iPhoneOS10.3.sdk (last SDK with armv7 stubs).
+#  - Deployment target 8.0 so the dylib loads on every iOS 8.x release.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TWEAK_NAME="LegacyUI"
 ARCH="armv7"
-MIN_OS="8.4.1"
+MIN_OS="8.0"
 LEGACY_SDK="$ROOT/third_party/theos-sdks/iPhoneOS10.3.sdk"
 BUILD="$ROOT/build"
 OBJ="$BUILD/obj"
 STAGE="$ROOT/stage"
 CONTROL="$ROOT/layout/DEBIAN/control"
-FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework AVFoundation -framework MediaPlayer"
+FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework MediaPlayer"
 
 die() { echo "build.sh: ERROR: $*" >&2; exit 1; }
 
@@ -45,11 +45,11 @@ compile_all() {
     incs="$(include_flags)"
     mkdir -p "$OBJ"
 
-    echo "  Compiling Tweak.xm..."
+    echo "  CC Tweak.m"
     xcrun clang -arch "$ARCH" -miphoneos-version-min="$MIN_OS" \
         -isysroot "$compile_sysroot" -fobjc-arc -Os -Wall \
-        -Wunguarded-availability $incs -c "$ROOT/Tweak.xm" -o "$OBJ/Tweak.o" \
-        || die "compile failed: Tweak.xm"
+        -Wunguarded-availability $incs -c "$ROOT/Tweak.m" -o "$OBJ/Tweak.o" \
+        || die "compile failed: Tweak.m"
 
     for src in "$ROOT/Core/"*.m "$ROOT/Dock/"*.m "$ROOT/VolumeHUD/"*.m; do
         [ -f "$src" ] || continue
@@ -62,6 +62,7 @@ compile_all() {
     done
 
     [ -n "$(ls -A "$OBJ" 2>/dev/null)" ] || die "no object files produced"
+    [ -f "$OBJ/Tweak.o" ] || die "Tweak.o missing — entry point was not compiled"
 }
 
 link_binary() {

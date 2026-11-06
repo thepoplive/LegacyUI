@@ -1,6 +1,4 @@
 #import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import "CUIVolumePillView.h"
 
 @interface CUIVolumeController : NSObject
 

@@ -1,180 +1,152 @@
 #import "CUIVolumeController.h"
+#import "CUIVolumePillView.h"
 #import "../Core/CUIConfiguration.h"
-#import <AVFoundation/AVAudioSession.h>
 #import <MediaPlayer/MediaPlayer.h>
-
-static CUIVolumeController *_sharedInstance = nil;
-static CUIVolumePillView *_volumePillView = nil;
+#import <math.h>
 
 @interface CUIVolumeController ()
+@property (nonatomic, strong) MPVolumeView *volumeViewHack;
+@property (nonatomic, strong) UISlider *systemVolumeSlider;
+@property (nonatomic, strong) CUIVolumePillView *pill;
 @property (nonatomic, assign) float currentVolume;
-@property (nonatomic, assign) BOOL isVolumeHUDVisible;
 @end
 
 @implementation CUIVolumeController
 
 + (instancetype)sharedInstance {
+    static CUIVolumeController *instance = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        _sharedInstance = [[CUIVolumeController alloc] init];
+        instance = [[CUIVolumeController alloc] init];
     });
-    return _sharedInstance;
+    return instance;
 }
 
 - (instancetype)init {
     self = [super init];
     if (self) {
         _currentVolume = 0.5;
-        _isVolumeHUDVisible = NO;
     }
     return self;
 }
 
-- (void)activate {
+- (BOOL)moduleWanted {
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
-    if (!config.enabled || !config.volumeHUDEnabled || !config.volumePillEnabled) {
+    return config.enabled && config.volumeHUDEnabled && config.volumePillEnabled;
+}
+
+- (void)activate {
+    if (![self moduleWanted]) {
         [self deactivate];
         return;
     }
-
-    if (_volumePillView) return;
-
-    [self setupVolumePill];
-    [self setupVolumeObserver];
-
-    NSLog(@"[LegacyUI] Volume HUD activated");
+    [self installVolumeObserverIfNeeded];
 }
 
 - (void)deactivate {
-    if (_volumePillView) {
-        [_volumePillView removeFromSuperview];
-        _volumePillView = nil;
+    [self.pill hideWithAnimation];
+}
+
+- (UIWindow *)hostWindow {
+    UIWindow *key = [[UIApplication sharedApplication] keyWindow];
+    if (key) return key;
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if (window) return window;
     }
-    [self removeVolumeObserver];
+    return nil;
 }
 
-- (void)setupVolumePill {
-    if (_volumePillView) return;
+- (void)installVolumeObserverIfNeeded {
+    if (_systemVolumeSlider) return;
 
-    CGFloat screenWidth = CGRectGetWidth([UIScreen mainScreen].bounds);
-    CGFloat pillWidth = MIN(screenWidth - 40, 320);
-    CGFloat pillHeight = 80;
-
-    CGRect frame = CGRectMake((screenWidth - pillWidth) / 2, 60, pillWidth, pillHeight);
-    _volumePillView = [[CUIVolumePillView alloc] initWithFrame:frame];
-    _volumePillView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
-
-    UIWindow *keyWindow = [[UIApplication sharedApplication] keyWindow];
-    if (keyWindow) {
-        [keyWindow addSubview:_volumePillView];
-    } else {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            UIWindow *window = [[UIApplication sharedApplication] keyWindow];
-            if (window && !_volumePillView.superview) {
-                [window addSubview:_volumePillView];
-            }
+    UIWindow *window = [self hostWindow];
+    if (!window) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self activate];
         });
+        return;
     }
-}
 
-- (void)setupVolumeObserver {
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(volumeChanged:)
-                                                 name:@"AVAudioSessionRouteChangeNotification"
-                                               object:nil];
+    _volumeViewHack = [[MPVolumeView alloc] initWithFrame:CGRectMake(-2000, -2000, 60, 30)];
+    [window addSubview:_volumeViewHack];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(volumeChanged:)
-                                                 name:@"AVAudioSessionInterruptionNotification"
-                                               object:nil];
-
-    [self observeVolumeUsingMPVolumeView];
-}
-
-- (void)observeVolumeUsingMPVolumeView {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        for (UIView *view in [[[UIApplication sharedApplication] windows] copy]) {
-            for (UIView *subview in view.subviews) {
-                if ([NSStringFromClass([subview class]) containsString:@"MPVolumeView"]) {
-                    [subview setHidden:YES];
-                    [self setupVolumeSliderObserver:subview];
-                    return;
-                }
-            }
-        }
-
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self observeVolumeUsingMPVolumeView];
-        });
-    });
-}
-
-- (void)setupVolumeSliderObserver:(UIView *)volumeView {
-    for (UIView *slider in volumeView.subviews) {
-        if ([slider isKindOfClass:[UISlider class]]) {
-            [(UISlider *)slider addTarget:self
-                                   action:@selector(systemVolumeChanged:)
-                         forControlEvents:UIControlEventValueChanged];
-            NSLog(@"[LegacyUI] Volume slider observer attached");
+    for (UIView *sub in _volumeViewHack.subviews) {
+        if ([sub isKindOfClass:[UISlider class]]) {
+            _systemVolumeSlider = (UISlider *)sub;
             break;
         }
+    }
+
+    if (_systemVolumeSlider) {
+        _currentVolume = _systemVolumeSlider.value;
+        [_systemVolumeSlider addTarget:self
+                                action:@selector(systemVolumeChanged:)
+                      forControlEvents:UIControlEventValueChanged];
+        NSLog(@"[LegacyUI] Volume observer attached");
+    } else {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self installVolumeObserverIfNeeded];
+        });
     }
 }
 
 - (void)systemVolumeChanged:(UISlider *)sender {
     _currentVolume = sender.value;
-    [self showVolumePill];
-    [_volumePillView updateVolume:_currentVolume];
+    [self presentPill];
 }
 
-- (void)volumeChanged:(NSNotification *)notification {
-    [self showVolumePill];
+- (void)presentPill {
+    if (![self moduleWanted]) return;
+
+    UIWindow *window = [self hostWindow];
+    if (!window) return;
+
+    if (!_pill) {
+        CGRect bounds = [UIScreen mainScreen].bounds;
+        CGFloat width = MIN(bounds.size.width - 40.0, 320.0);
+        _pill = [[CUIVolumePillView alloc] initWithFrame:CGRectMake(
+            (bounds.size.width - width) / 2.0, 52.0, width, 84.0)];
+
+        __weak CUIVolumeController *weakSelf = self;
+        _pill.onVolumeUserChange = ^(float volume) {
+            [weakSelf setSystemVolume:volume];
+        };
+    }
+
+    if (_pill.superview != window) {
+        [_pill removeFromSuperview];
+        [window addSubview:_pill];
+    }
+
+    CGRect bounds = [UIScreen mainScreen].bounds;
+    CGFloat width = MIN(bounds.size.width - 40.0, 320.0);
+    _pill.frame = CGRectMake((bounds.size.width - width) / 2.0, 52.0, width, 84.0);
+
+    _pill.volumeLevel = _currentVolume;
+    [_pill showWithAnimation];
 }
 
-- (void)removeVolumeObserver {
-    [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:@"AVAudioSessionRouteChangeNotification"
-                                                  object:nil];
-    [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:@"AVAudioSessionInterruptionNotification"
-                                                  object:nil];
+- (void)setSystemVolume:(float)volume {
+    if (fabsf(volume - _currentVolume) < 0.001) return;
+    _currentVolume = volume;
+    if (_systemVolumeSlider) {
+        _systemVolumeSlider.value = volume;
+    }
 }
 
 - (void)showVolumePill {
-    if (!_volumePillView) return;
-
-    AVAudioSession *session = [AVAudioSession sharedInstance];
-    NSString *category = session.category;
-
-    CUIVolumeType volumeType = CUIVolumeTypeMedia;
-    if ([category isEqualToString:@"AVAudioSessionCategoryPlayback"]) {
-        volumeType = CUIVolumeTypeMedia;
-    } else if ([category isEqualToString:@"AVAudioSessionCategoryRingtone"]) {
-        volumeType = CUIVolumeTypeRinger;
-    } else if ([category isEqualToString:@"AVAudioSessionCategoryVoiceChat"]) {
-        volumeType = CUIVolumeTypeCall;
-    } else if ([category isEqualToString:@"AVAudioSessionCategoryAlert"]) {
-        volumeType = CUIVolumeTypeAlarm;
-    }
-
-    _volumePillView.volumeType = volumeType;
-    _volumePillView.volumeLevel = _currentVolume;
-    [_volumePillView showWithAnimation];
+    [self presentPill];
 }
 
 - (void)hideVolumePill {
-    [_volumePillView hideWithAnimation];
+    [_pill hideWithAnimation];
 }
 
 - (void)updateVolume:(float)volume {
     _currentVolume = volume;
-    if (_volumePillView) {
-        [_volumePillView updateVolume:volume];
-    }
-}
-
-- (void)dealloc {
-    [self removeVolumeObserver];
+    _pill.volumeLevel = volume;
 }
 
 @end

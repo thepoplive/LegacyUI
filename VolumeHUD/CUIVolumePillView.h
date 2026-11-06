@@ -1,17 +1,12 @@
 #import <UIKit/UIKit.h>
 
-typedef NS_ENUM(NSInteger, CUIVolumeType) {
-    CUIVolumeTypeMedia,
-    CUIVolumeTypeRinger,
-    CUIVolumeTypeCall,
-    CUIVolumeTypeAlarm
-};
+typedef void (^CUIVolumeChangeBlock)(float volume);
 
 @interface CUIVolumePillView : UIView
 
-@property (nonatomic, assign) CUIVolumeType volumeType;
 @property (nonatomic, assign) float volumeLevel;
-@property (nonatomic, copy) NSString *volumeLabelText;
+@property (nonatomic, copy) NSString *volumeTitle;
+@property (nonatomic, copy) CUIVolumeChangeBlock onVolumeUserChange;
 
 - (void)showWithAnimation;
 - (void)hideWithAnimation;

@@ -1,12 +1,13 @@
 #import "CUIVolumePillView.h"
-#import "../Core/CUITheme.h"
 
 @interface CUIVolumePillView ()
-@property (nonatomic, strong) UIView *glassContainer;
+@property (nonatomic, strong) UIView *contentView;
+@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UIView *tintView;
+@property (nonatomic, strong) UILabel *iconLabel;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *percentLabel;
-@property (nonatomic, strong) UIProgressView *volumeProgress;
-@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UISlider *volumeSlider;
 @property (nonatomic, assign) BOOL isVisible;
 @property (nonatomic, strong) NSTimer *dismissTimer;
 @end
@@ -16,138 +17,151 @@
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        [self setupViews];
-        [self setupDefaultVolumeType];
+        _isVisible = NO;
+        _volumeLevel = 0.5;
+
+        self.userInteractionEnabled = YES;
+        self.backgroundColor = [UIColor clearColor];
+
+        _contentView = [[UIView alloc] init];
+        _contentView.layer.masksToBounds = YES;
+        _contentView.layer.cornerRadius = 16.0;
+        _contentView.backgroundColor = [UIColor clearColor];
+        [self addSubview:_contentView];
+
+        UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:effect];
+        [_contentView addSubview:_blurView];
+
+        _tintView = [[UIView alloc] init];
+        _tintView.backgroundColor = [UIColor colorWithWhite:0.10 alpha:0.55];
+        [_contentView addSubview:_tintView];
+
+        _iconLabel = [[UILabel alloc] init];
+        _iconLabel.text = @"\U0001F50A";
+        _iconLabel.font = [UIFont systemFontOfSize:20];
+        [_contentView addSubview:_iconLabel];
+
+        _titleLabel = [[UILabel alloc] init];
+        _titleLabel.text = @"Media Volume";
+        _titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+        _titleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.75];
+        [_contentView addSubview:_titleLabel];
+
+        _percentLabel = [[UILabel alloc] init];
+        _percentLabel.text = @"50%";
+        _percentLabel.font = [UIFont systemFontOfSize:24 weight:UIFontWeightBold];
+        _percentLabel.textColor = [UIColor whiteColor];
+        _percentLabel.textAlignment = NSTextAlignmentRight;
+        [_contentView addSubview:_percentLabel];
+
+        _volumeSlider = [[UISlider alloc] init];
+        [_volumeSlider setMinimumTrackTintColor:[UIColor whiteColor]];
+        [_volumeSlider setMaximumTrackTintColor:[UIColor colorWithWhite:1.0 alpha:0.25]];
+        [_volumeSlider setThumbTintColor:[UIColor whiteColor]];
+        _volumeSlider.value = _volumeLevel;
+        [_volumeSlider addTarget:self action:@selector(sliderValueChanged:)
+                forControlEvents:UIControlEventValueChanged];
+        [_volumeSlider addTarget:self action:@selector(sliderTouchDown:)
+                forControlEvents:UIControlEventTouchDown];
+        [_volumeSlider addTarget:self action:@selector(sliderTouchEnded:)
+                forControlEvents:UIControlEventTouchUpInside];
+        [_volumeSlider addTarget:self action:@selector(sliderTouchEnded:)
+                forControlEvents:UIControlEventTouchUpOutside];
+        [_volumeSlider addTarget:self action:@selector(sliderTouchEnded:)
+                forControlEvents:UIControlEventTouchCancel];
+        [_contentView addSubview:_volumeSlider];
+
+        _contentView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.28].CGColor;
+        _contentView.layer.borderWidth = 1.0;
+
+        self.layer.shadowColor = [UIColor blackColor].CGColor;
+        self.layer.shadowOpacity = 0.4;
+        self.layer.shadowOffset = CGSizeMake(0, 8);
+        self.layer.shadowRadius = 14.0;
+
+        self.alpha = 0.0;
+        self.transform = CGAffineTransformMakeTranslation(0, -24);
     }
     return self;
-}
-
-- (void)setupDefaultVolumeType {
-    _volumeType = CUIVolumeTypeMedia;
-    _volumeLevel = 0.5;
-    _isVisible = NO;
-}
-
-- (void)setupViews {
-    _glassContainer = [[UIView alloc] init];
-    _glassContainer.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.85];
-    _glassContainer.layer.cornerRadius = 16.0;
-    _glassContainer.layer.masksToBounds = YES;
-    [self addSubview:_glassContainer];
-
-    _iconView = [[UIImageView alloc] init];
-    _iconView.contentMode = UIViewContentModeScaleAspectFit;
-    _iconView.tintColor = [UIColor whiteColor];
-    [_glassContainer addSubview:_iconView];
-
-    _titleLabel = [[UILabel alloc] init];
-    _titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
-    _titleLabel.textColor = [UIColor colorWithWhite:0.9 alpha:1.0];
-    _titleLabel.text = @"Media Volume";
-    [_glassContainer addSubview:_titleLabel];
-
-    _percentLabel = [[UILabel alloc] init];
-    _percentLabel.font = [UIFont systemFontOfSize:28 weight:UIFontWeightBold];
-    _percentLabel.textColor = [UIColor whiteColor];
-    _percentLabel.text = @"50%";
-    [_glassContainer addSubview:_percentLabel];
-
-    _volumeProgress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    _volumeProgress.progressTintColor = [UIColor whiteColor];
-    _volumeProgress.trackTintColor = [UIColor colorWithWhite:1.0 alpha:0.2];
-    _volumeProgress.progress = 0.5;
-    [_glassContainer addSubview:_volumeProgress];
-
-    self.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.layer.shadowOffset = CGSizeMake(0, 4);
-    self.layer.shadowRadius = 12;
-    self.layer.shadowOpacity = 0.4;
-    self.layer.masksToBounds = NO;
-    self.alpha = 0;
-    self.transform = CGAffineTransformMakeTranslation(0, -20);
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
 
-    CGFloat padding = 16;
+    CGFloat padding = 14.0;
     CGFloat width = self.bounds.size.width;
 
-    _glassContainer.frame = CGRectMake(0, 0, width, self.bounds.size.height);
+    _contentView.frame = self.bounds;
+    _blurView.frame = _contentView.bounds;
+    _tintView.frame = _contentView.bounds;
 
-    _iconView.frame = CGRectMake(padding, padding, 24, 24);
-    _titleLabel.frame = CGRectMake(padding + 32, padding + 4, width - 48 - 60, 16);
-    _percentLabel.frame = CGRectMake(width - padding - 60, padding, 60, 32);
-    _volumeProgress.frame = CGRectMake(padding, padding + 36, width - padding * 2, 4);
-}
-
-- (void)setVolumeType:(CUIVolumeType)volumeType {
-    _volumeType = volumeType;
-
-    NSString *titleText = @"Media Volume";
-    switch (volumeType) {
-        case CUIVolumeTypeMedia:
-            titleText = @"Media Volume";
-            _iconView.image = [UIImage imageNamed:@"Speaker"];
-            break;
-        case CUIVolumeTypeRinger:
-            titleText = @"Ringer Volume";
-            _iconView.image = [UIImage imageNamed:@"Ring"];
-            break;
-        case CUIVolumeTypeCall:
-            titleText = @"Call Volume";
-            _iconView.image = [UIImage imageNamed:@"Phone"];
-            break;
-        case CUIVolumeTypeAlarm:
-            titleText = @"Alarm Volume";
-            _iconView.image = [UIImage imageNamed:@"Alarm"];
-            break;
-    }
-
-    _titleLabel.text = titleText;
+    _iconLabel.frame = CGRectMake(padding, padding, 24, 24);
+    _titleLabel.frame = CGRectMake(padding + 30, padding + 5, width - padding * 2 - 30 - 74, 16);
+    _percentLabel.frame = CGRectMake(width - padding - 74, padding + 2, 74, 24);
+    _volumeSlider.frame = CGRectMake(padding, padding + 34, width - padding * 2, 24);
 }
 
 - (void)setVolumeLevel:(float)volumeLevel {
     _volumeLevel = volumeLevel;
     _percentLabel.text = [NSString stringWithFormat:@"%.0f%%", volumeLevel * 100];
-    _volumeProgress.progress = volumeLevel;
+    _volumeSlider.value = volumeLevel;
+}
+
+- (void)setVolumeTitle:(NSString *)volumeTitle {
+    _volumeTitle = [volumeTitle copy];
+    _titleLabel.text = _volumeTitle;
 }
 
 - (void)updateVolume:(float)level {
     self.volumeLevel = level;
 }
 
-- (void)showWithAnimation {
-    if (_isVisible) return;
+#pragma mark - Slider events
 
-    _isVisible = YES;
+- (void)sliderValueChanged:(UISlider *)sender {
+    _volumeLevel = sender.value;
+    _percentLabel.text = [NSString stringWithFormat:@"%.0f%%", sender.value * 100];
+    if (self.onVolumeUserChange) self.onVolumeUserChange(sender.value);
+    [self scheduleDismissTimer];
+}
+
+- (void)sliderTouchDown:(UISlider *)sender {
     [self invalidateDismissTimer];
+}
 
-    [UIView animateWithDuration:0.3
-                          delay:0
-         usingSpringWithDamping:0.8
-          initialSpringVelocity:0.5
-                        options:UIViewAnimationOptionCurveEaseOut
-                     animations:^{
-        self.alpha = 1;
-        self.transform = CGAffineTransformIdentity;
-    } completion:nil];
+- (void)sliderTouchEnded:(UISlider *)sender {
+    [self scheduleDismissTimer];
+}
 
+#pragma mark - Show / hide
+
+- (void)showWithAnimation {
+    if (!_isVisible) {
+        _isVisible = YES;
+        [UIView animateWithDuration:0.35
+                              delay:0.0
+             usingSpringWithDamping:0.8
+              initialSpringVelocity:0.6
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            self.alpha = 1.0;
+            self.transform = CGAffineTransformIdentity;
+        } completion:nil];
+    }
     [self scheduleDismissTimer];
 }
 
 - (void)hideWithAnimation {
     if (!_isVisible) return;
-
     _isVisible = NO;
     [self invalidateDismissTimer];
-
     [UIView animateWithDuration:0.25
-                          delay:0
+                          delay:0.0
                         options:UIViewAnimationOptionCurveEaseIn
                      animations:^{
-        self.alpha = 0;
-        self.transform = CGAffineTransformMakeTranslation(0, -20);
+        self.alpha = 0.0;
+        self.transform = CGAffineTransformMakeTranslation(0, -24);
     } completion:nil];
 }
 

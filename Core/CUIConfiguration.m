@@ -2,9 +2,23 @@
 
 static NSString * const kSettingsDomain = @"com.legacyui.settings";
 
-static BOOL CUIBoolWithDefault(NSDictionary *dict, NSString *key) {
-    id value = dict[key];
-    if (value) return [value boolValue];
+static NSDictionary *LUIFileDictionary() {
+    NSString *path = [@"/var/mobile/Library/Preferences"
+        stringByAppendingPathComponent:[kSettingsDomain stringByAppendingString:@".plist"]];
+    NSDictionary *dict = [NSDictionary dictionaryWithContentsOfFile:path];
+    if ([dict isKindOfClass:[NSDictionary class]]) return dict;
+    return nil;
+}
+
+static BOOL LUIReadFlag(NSString *key, NSDictionary *fileDict) {
+    CFPropertyListRef raw = CFPreferencesCopyAppValue(
+        (CFStringRef)key, (CFStringRef)kSettingsDomain);
+    if (raw) {
+        id value = CFBridgingRelease(raw);
+        if ([value isKindOfClass:[NSNumber class]]) return [value boolValue];
+    }
+    id fileValue = fileDict[key];
+    if ([fileValue isKindOfClass:[NSNumber class]]) return [fileValue boolValue];
     return YES;
 }
 
@@ -28,34 +42,19 @@ static BOOL CUIBoolWithDefault(NSDictionary *dict, NSString *key) {
 }
 
 - (void)loadSettings {
-    NSDictionary *settings = CFBridgingRelease(
-        CFPreferencesCopyAppValue(
-            (CFStringRef)@"*",
-            (CFStringRef)kSettingsDomain
-        )
-    );
+    NSDictionary *fileDict = LUIFileDictionary();
 
-    if (![settings isKindOfClass:[NSDictionary class]] || settings.count == 0) {
-        settings = [NSDictionary dictionaryWithContentsOfFile:
-            [@"/var/mobile/Library/Preferences" stringByAppendingPathComponent:[kSettingsDomain stringByAppendingString:@".plist"]]];
-    }
-
-    if (![settings isKindOfClass:[NSDictionary class]]) {
-        [self setDefaultSettings];
-        return;
-    }
-
-    _enabled = CUIBoolWithDefault(settings, @"Enabled");
-    _lockScreenEnabled = CUIBoolWithDefault(settings, @"LockScreenEnabled");
-    _adaptiveClockEnabled = CUIBoolWithDefault(settings, @"AdaptiveClockEnabled");
-    _adaptiveNotificationsEnabled = CUIBoolWithDefault(settings, @"AdaptiveNotificationsEnabled");
-    _passcodeAppearanceEnabled = CUIBoolWithDefault(settings, @"PasscodeAppearanceEnabled");
-    _dockEnabled = CUIBoolWithDefault(settings, @"DockEnabled");
-    _liquidGlassEnabled = CUIBoolWithDefault(settings, @"LiquidGlassEnabled");
-    _controlCenterEnabled = CUIBoolWithDefault(settings, @"ControlCenterEnabled");
-    _volumeHUDEnabled = CUIBoolWithDefault(settings, @"VolumeHUDEnabled");
-    _volumePillEnabled = CUIBoolWithDefault(settings, @"VolumePillEnabled");
-    _silentHUDEnabled = CUIBoolWithDefault(settings, @"SilentHUDEnabled");
+    _enabled = LUIReadFlag(@"Enabled", fileDict);
+    _lockScreenEnabled = LUIReadFlag(@"LockScreenEnabled", fileDict);
+    _adaptiveClockEnabled = LUIReadFlag(@"AdaptiveClockEnabled", fileDict);
+    _adaptiveNotificationsEnabled = LUIReadFlag(@"AdaptiveNotificationsEnabled", fileDict);
+    _passcodeAppearanceEnabled = LUIReadFlag(@"PasscodeAppearanceEnabled", fileDict);
+    _dockEnabled = LUIReadFlag(@"DockEnabled", fileDict);
+    _liquidGlassEnabled = LUIReadFlag(@"LiquidGlassEnabled", fileDict);
+    _controlCenterEnabled = LUIReadFlag(@"ControlCenterEnabled", fileDict);
+    _volumeHUDEnabled = LUIReadFlag(@"VolumeHUDEnabled", fileDict);
+    _volumePillEnabled = LUIReadFlag(@"VolumePillEnabled", fileDict);
+    _silentHUDEnabled = LUIReadFlag(@"SilentHUDEnabled", fileDict);
 }
 
 - (void)setDefaultSettings {
@@ -70,55 +69,26 @@ static BOOL CUIBoolWithDefault(NSDictionary *dict, NSString *key) {
     _volumeHUDEnabled = YES;
     _volumePillEnabled = YES;
     _silentHUDEnabled = YES;
-    [self saveSettings];
 }
 
 - (void)saveSettings {
-    CFPreferencesSetValue(
-        (CFStringRef)@"Enabled", (CFPropertyListRef)@(_enabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"LockScreenEnabled", (CFPropertyListRef)@(_lockScreenEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"AdaptiveClockEnabled", (CFPropertyListRef)@(_adaptiveClockEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"AdaptiveNotificationsEnabled", (CFPropertyListRef)@(_adaptiveNotificationsEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"PasscodeAppearanceEnabled", (CFPropertyListRef)@(_passcodeAppearanceEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"DockEnabled", (CFPropertyListRef)@(_dockEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"LiquidGlassEnabled", (CFPropertyListRef)@(_liquidGlassEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"ControlCenterEnabled", (CFPropertyListRef)@(_controlCenterEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"VolumeHUDEnabled", (CFPropertyListRef)@(_volumeHUDEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"VolumePillEnabled", (CFPropertyListRef)@(_volumePillEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSetValue(
-        (CFStringRef)@"SilentHUDEnabled", (CFPropertyListRef)@(_silentHUDEnabled),
-        (CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost
-    );
-    CFPreferencesSynchronize((CFStringRef)kSettingsDomain, kCFPreferencesAnyUser, kCFPreferencesCurrentHost);
+    NSDictionary *settings = @{
+        @"Enabled": @(_enabled),
+        @"LockScreenEnabled": @(_lockScreenEnabled),
+        @"AdaptiveClockEnabled": @(_adaptiveClockEnabled),
+        @"AdaptiveNotificationsEnabled": @(_adaptiveNotificationsEnabled),
+        @"PasscodeAppearanceEnabled": @(_passcodeAppearanceEnabled),
+        @"DockEnabled": @(_dockEnabled),
+        @"LiquidGlassEnabled": @(_liquidGlassEnabled),
+        @"ControlCenterEnabled": @(_controlCenterEnabled),
+        @"VolumeHUDEnabled": @(_volumeHUDEnabled),
+        @"VolumePillEnabled": @(_volumePillEnabled),
+        @"SilentHUDEnabled": @(_silentHUDEnabled)
+    };
+
+    [settings writeToFile:[@"/var/mobile/Library/Preferences"
+        stringByAppendingPathComponent:[kSettingsDomain stringByAppendingString:@".plist"]]
+             atomically:YES];
 }
 
 @end

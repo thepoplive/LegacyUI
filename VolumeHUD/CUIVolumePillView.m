@@ -4,7 +4,7 @@
 @interface CUIVolumePillView ()
 @property (nonatomic, strong) UIView *glassContainer;
 @property (nonatomic, strong) UILabel *titleLabel;
-@property (nonatomic, strong) UILabel *volumeLabel;
+@property (nonatomic, strong) UILabel *percentLabel;
 @property (nonatomic, strong) UIProgressView *volumeProgress;
 @property (nonatomic, strong) UIImageView *iconView;
 @property (nonatomic, assign) BOOL isVisible;
@@ -46,11 +46,11 @@
     _titleLabel.text = @"Media Volume";
     [_glassContainer addSubview:_titleLabel];
 
-    _volumeLabel = [[UILabel alloc] init];
-    _volumeLabel.font = [UIFont systemFontOfSize:28 weight:UIFontWeightBold];
-    _volumeLabel.textColor = [UIColor whiteColor];
-    _volumeLabel.text = @"50%";
-    [_glassContainer addSubview:_volumeLabel];
+    _percentLabel = [[UILabel alloc] init];
+    _percentLabel.font = [UIFont systemFontOfSize:28 weight:UIFontWeightBold];
+    _percentLabel.textColor = [UIColor whiteColor];
+    _percentLabel.text = @"50%";
+    [_glassContainer addSubview:_percentLabel];
 
     _volumeProgress = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
     _volumeProgress.progressTintColor = [UIColor whiteColor];
@@ -77,38 +77,39 @@
 
     _iconView.frame = CGRectMake(padding, padding, 24, 24);
     _titleLabel.frame = CGRectMake(padding + 32, padding + 4, width - 48 - 60, 16);
-    _volumeLabel.frame = CGRectMake(width - padding - 60, padding, 60, 32);
+    _percentLabel.frame = CGRectMake(width - padding - 60, padding, 60, 32);
     _volumeProgress.frame = CGRectMake(padding, padding + 36, width - padding * 2, 4);
 }
 
 - (void)setVolumeType:(CUIVolumeType)volumeType {
     _volumeType = volumeType;
 
+    NSString *titleText = @"Media Volume";
     switch (volumeType) {
         case CUIVolumeTypeMedia:
-            _volumeLabel = @"Media Volume";
+            titleText = @"Media Volume";
             _iconView.image = [UIImage imageNamed:@"Speaker"];
             break;
         case CUIVolumeTypeRinger:
-            _volumeLabel = @"Ringer Volume";
+            titleText = @"Ringer Volume";
             _iconView.image = [UIImage imageNamed:@"Ring"];
             break;
         case CUIVolumeTypeCall:
-            _volumeLabel = @"Call Volume";
+            titleText = @"Call Volume";
             _iconView.image = [UIImage imageNamed:@"Phone"];
             break;
         case CUIVolumeTypeAlarm:
-            _volumeLabel = @"Alarm Volume";
+            titleText = @"Alarm Volume";
             _iconView.image = [UIImage imageNamed:@"Alarm"];
             break;
     }
 
-    _titleLabel.text = _volumeLabel;
+    _titleLabel.text = titleText;
 }
 
 - (void)setVolumeLevel:(float)volumeLevel {
     _volumeLevel = volumeLevel;
-    _volumeLabel.text = [NSString stringWithFormat:@"%.0f%%", volumeLevel * 100];
+    _percentLabel.text = [NSString stringWithFormat:@"%.0f%%", volumeLevel * 100];
     _volumeProgress.progress = volumeLevel;
 }
 

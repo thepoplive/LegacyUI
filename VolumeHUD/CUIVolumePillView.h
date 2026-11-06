@@ -11,7 +11,7 @@ typedef NS_ENUM(NSInteger, CUIVolumeType) {
 
 @property (nonatomic, assign) CUIVolumeType volumeType;
 @property (nonatomic, assign) float volumeLevel;
-@property (nonatomic, copy) NSString *volumeLabel;
+@property (nonatomic, copy) NSString *volumeLabelText;
 
 - (void)showWithAnimation;
 - (void)hideWithAnimation;

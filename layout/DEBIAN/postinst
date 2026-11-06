@@ -1,0 +1,5 @@
+#!/bin/bash
+chmod 755 /Library/MobileSubstrate/DynamicLibraries/LegacyUI.dylib
+chmod 755 /Library/PreferenceBundles/LegacyUI.bundle/LegacyUI
+killall -9 SpringBoard || true
+exit 0

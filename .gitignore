@@ -1,0 +1,9 @@
+build/
+stage/
+obj/
+third_party/
+*.o
+*.dylib
+*.deb
+.DS_Store
+*.xcuserstate

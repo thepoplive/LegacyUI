@@ -9,38 +9,48 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install tools
-        run: brew install ldid dpkg
-
-      - name: Fetch legacy iOS SDK (sparse)
+      - name: Install Theos
         run: |
-          git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/theos/sdks.git third_party/theos-sdks
-          git -C third_party/theos-sdks sparse-checkout set iPhoneOS10.3.sdk
-          test -d third_party/theos-sdks/iPhoneOS10.3.sdk
+          brew install dpkg ldid
+          export THEOS=$HOME/theos
+          rm -rf $THEOS
+          git clone --depth 1 https://github.com/theos/theos.git $THEOS
 
-      - name: Build .deb
-        run: make package
+      - name: Fetch iOS 10.3 SDK
+        run: |
+          export THEOS=$HOME/theos
+          rm -rf $THEOS/sdks
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/theos/sdks.git $THEOS/sdks
+          git -C $THEOS/sdks sparse-checkout set iPhoneOS10.3.sdk
+
+      - name: Build tweak
+        run: |
+          export THEOS=$HOME/theos
+          cd "$GITHUB_WORKSPACE"
+          make package
 
       - name: Validate .deb
-        run: make validate
+        run: |
+          ls -la packages/*.deb
+          dpkg-deb -I packages/*.deb
 
       - uses: actions/upload-artifact@v4
         with:
           name: legacyui-deb
-          path: build/*.deb
+          path: packages/*.deb
 
       - name: Publish GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" build/*.deb \
+          gh release create "$GITHUB_REF_NAME" packages/*.deb \
             --title "$GITHUB_REF_NAME" --generate-notes \
-          || gh release upload "$GITHUB_REF_NAME" build/*.deb --clobber
+          || gh release upload "$GITHUB_REF_NAME" packages/*.deb --clobber

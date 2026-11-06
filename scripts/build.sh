@@ -77,10 +77,20 @@ stage_tweak() {
     rm -rf "$STAGE"
     mkdir -p "$STAGE/Library/MobileSubstrate/DynamicLibraries"
     mkdir -p "$STAGE/Library/PreferenceBundles/LegacyUI.bundle"
+    mkdir -p "$STAGE/Library/PreferenceLoader/Preferences"
     mkdir -p "$STAGE/DEBIAN"
 
     cp "$BUILD/${TWEAK_NAME}.dylib" "$STAGE/Library/MobileSubstrate/DynamicLibraries/"
     chmod 755 "$STAGE/Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.dylib"
+
+    if [ -d "$ROOT/Preferences" ]; then
+        cp -r "$ROOT/Preferences/"*.plist "$STAGE/Library/PreferenceBundles/LegacyUI.bundle/" 2>/dev/null || true
+        cp -r "$ROOT/Preferences/"*.m "$STAGE/Library/PreferenceBundles/LegacyUI.bundle/" 2>/dev/null || true
+    fi
+
+    if [ -f "$ROOT/Preferences/Entry.plist" ]; then
+        cp "$ROOT/Preferences/Entry.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
+    fi
 
     cp "$CONTROL" "$STAGE/DEBIAN/control"
     chmod 644 "$STAGE/DEBIAN/control"

@@ -16,7 +16,11 @@ OBJ="$BUILD/obj"
 STAGE="$ROOT/stage"
 CONTROL="$ROOT/layout/DEBIAN/control"
 FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework MediaPlayer"
-LIBS="$LEGACY_SDK/usr/lib/system/libunwind.tbd"
+# No exception codegen: armv7 SjLj unwind symbols are not exported by the SDK's
+# libSystem.tbd. Tweak dylibs resolve remaining runtime symbols inside the host
+# process (standard for MobileSubstrate dylibs).
+COMMON_CFLAGS="-fobjc-arc -fno-objc-exceptions -fno-exceptions -Os -Wall -Wunguarded-availability"
+LINK_UNDEF="-Wl,-undefined,dynamic_lookup"
 
 die() { echo "build.sh: ERROR: $*" >&2; exit 1; }
 
@@ -48,8 +52,7 @@ compile_all() {
 
     echo "  CC Tweak.m"
     xcrun clang -arch "$ARCH" -miphoneos-version-min="$MIN_OS" \
-        -isysroot "$compile_sysroot" -fobjc-arc -Os -Wall \
-        -Wunguarded-availability $incs -c "$ROOT/Tweak.m" -o "$OBJ/Tweak.o" \
+        -isysroot "$compile_sysroot" $COMMON_CFLAGS $incs -c "$ROOT/Tweak.m" -o "$OBJ/Tweak.o" \
         || die "compile failed: Tweak.m"
 
     for src in "$ROOT/Core/"*.m "$ROOT/Dock/"*.m "$ROOT/VolumeHUD/"*.m; do
@@ -57,8 +60,7 @@ compile_all() {
         obj="$OBJ/$(basename "$src" .m).o"
         echo "  CC $(basename "$src")"
         xcrun clang -arch "$ARCH" -miphoneos-version-min="$MIN_OS" \
-            -isysroot "$compile_sysroot" -fobjc-arc -Os -Wall \
-            -Wunguarded-availability $incs -c "$src" -o "$obj" \
+            -isysroot "$compile_sysroot" $COMMON_CFLAGS $incs -c "$src" -o "$obj" \
             || die "compile failed: $src"
     done
 
@@ -71,8 +73,8 @@ link_binary() {
     echo "  LD $TWEAK_NAME (sysroot: $(basename "$LEGACY_SDK"))"
     xcrun clang -arch "$ARCH" -miphoneos-version-min="$MIN_OS" \
         -dynamiclib -install_name /Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.dylib \
-        -isysroot "$LEGACY_SDK" -Wl,-U,_objc_msgSend_stret \
-        -o "$BUILD/${TWEAK_NAME}.dylib" "$OBJ"/*.o $FRAMEWORKS $LIBS \
+        -isysroot "$LEGACY_SDK" -Wl,-U,_objc_msgSend_stret $LINK_UNDEF \
+        -o "$BUILD/${TWEAK_NAME}.dylib" "$OBJ"/*.o $FRAMEWORKS \
         || die "link failed"
     command -v ldid >/dev/null 2>&1 || die "ldid not found (brew install ldid)"
     ldid -S "$BUILD/${TWEAK_NAME}.dylib" || die "ldid signing failed"

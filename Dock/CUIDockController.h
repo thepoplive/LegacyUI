@@ -1,4 +1,4 @@
-#import <objc/runtime.h>
+#import <Foundation/Foundation.h>
 
 @interface CUIDockController : NSObject
 

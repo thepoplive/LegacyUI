@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Enabled</key>
+    <true/>
+    <key>LockScreenEnabled</key>
+    <true/>
+    <key>AdaptiveClockEnabled</key>
+    <true/>
+    <key>AdaptiveNotificationsEnabled</key>
+    <true/>
+    <key>PasscodeAppearanceEnabled</key>
+    <true/>
+    <key>DockEnabled</key>
+    <true/>
+    <key>LiquidGlassEnabled</key>
+    <true/>
+    <key>ControlCenterEnabled</key>
+    <true/>
+    <key>VolumeHUDEnabled</key>
+    <true/>
+    <key>VolumePillEnabled</key>
+    <true/>
+    <key>SilentHUDEnabled</key>
+    <true/>
+</dict>
+</plist>

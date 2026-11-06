@@ -15,7 +15,7 @@ BUILD="$ROOT/build"
 OBJ="$BUILD/obj"
 STAGE="$ROOT/stage"
 CONTROL="$ROOT/layout/DEBIAN/control"
-FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore"
+FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework AVFoundation -framework MediaPlayer"
 
 die() { echo "build.sh: ERROR: $*" >&2; exit 1; }
 
@@ -31,7 +31,7 @@ include_flags() {
     local dirs="" d
     while IFS= read -r d; do
         dirs="$dirs -I$d"
-    done < <(find "$ROOT/Core" -name '*.h' 2>/dev/null | xargs -n1 dirname | sort -u)
+    done < <(find "$ROOT/Core" "$ROOT/Dock" "$ROOT/VolumeHUD" -name '*.h' 2>/dev/null | xargs -n1 dirname | sort -u)
     echo "$dirs"
 }
 
@@ -48,7 +48,7 @@ compile_all() {
         -Wunguarded-availability $incs -c "$ROOT/Tweak.xm" -o "$OBJ/Tweak.o" \
         || die "compile failed: Tweak.xm"
 
-    for src in "$ROOT/Core/"*.m; do
+    for src in "$ROOT/Core/"*.m "$ROOT/Dock/"*.m "$ROOT/VolumeHUD/"*.m; do
         [ -f "$src" ] || continue
         obj="$OBJ/$(basename "$src" .m).o"
         echo "  CC $(basename "$src")"

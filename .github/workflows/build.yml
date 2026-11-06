@@ -19,6 +19,7 @@ jobs:
         run: |
           brew install dpkg ldid
           export THEOS=$HOME/theos
+          rm -rf $THEOS
           git clone --depth 1 https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
           echo "$THEOS/bin" >> $GITHUB_PATH
@@ -26,6 +27,7 @@ jobs:
       - name: Fetch iOS 10.3 SDK
         run: |
           export THEOS=$HOME/theos
+          rm -rf $THEOS/sdks
           git clone --depth 1 --filter=blob:none --sparse \
             https://github.com/theos/sdks.git $THEOS/sdks
           git -C $THEOS/sdks sparse-checkout set iPhoneOS10.3.sdk

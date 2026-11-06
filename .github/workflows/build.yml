@@ -15,31 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Theos
-        run: |
-          brew install dpkg ldid
-          THEOS_DIR="$HOME/theos"
-          rm -rf "$THEOS_DIR"
-          git clone --depth 1 https://github.com/theos/theos.git "$THEOS_DIR"
+      - name: Install tools
+        run: brew install ldid dpkg
 
-      - name: Fetch iOS 10.3 SDK
+      - name: Fetch legacy iOS SDK (sparse)
         run: |
-          THEOS_DIR="$HOME/theos"
-          rm -rf "$THEOS_DIR/sdks"
           git clone --depth 1 --filter=blob:none --sparse \
-            https://github.com/theos/sdks.git "$THEOS_DIR/sdks"
-          git -C "$THEOS_DIR/sdks" sparse-checkout set iPhoneOS10.3.sdk
+            https://github.com/theos/sdks.git third_party/theos-sdks
+          git -C third_party/theos-sdks sparse-checkout set iPhoneOS10.3.sdk
+          test -d third_party/theos-sdks/iPhoneOS10.3.sdk
 
-      - name: Build tweak
-        run: |
-          THEOS_DIR="$HOME/theos"
-          cd "$GITHUB_WORKSPACE"
-          make package THEOS="$THEOS_DIR" THEOS_DEVICE_IP=localhost
+      - name: Build .deb
+        run: make package
 
       - name: Validate .deb
-        run: |
-          ls -la build/*.deb
-          dpkg-deb -I build/*.deb
+        run: make validate
 
       - uses: actions/upload-artifact@v4
         with:

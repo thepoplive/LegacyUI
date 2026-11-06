@@ -1,13 +1,20 @@
-# LegacyUI — Theos-based build
-THEOS_DIR := /Users/runner/theos
+# LegacyUI — build orchestration (NO Theos; plain clang + ldid + dpkg-deb).
+# Real logic lives in scripts/build.sh. macOS runner required for iOS armv7.
 
-ARCHS = armv7
-TARGET = iphoneos:8.4.1
+APP_NAME := LegacyUI
 
-THEOS_DEVICE_IP = localhost
-THEOS_DEVICE_PORT = 2222
+.PHONY: all build package validate clean
 
-TWEAK_NAME = LegacyUI
-LegacyUI_FILES = Tweak.xm Core/CUIConfiguration.m Core/CUITheme.m Core/CUIGlassView.m
+all: package validate
 
-include $(THEOS_DIR)/makefiles/common.mk
+build:
+	@./scripts/build.sh build
+
+package:
+	@./scripts/build.sh package
+
+validate:
+	@./scripts/build.sh validate
+
+clean:
+	@rm -rf build stage

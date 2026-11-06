@@ -24,7 +24,6 @@
 
 - (void)setupDefaultVolumeType {
     _volumeType = CUIVolumeTypeMedia;
-    _volumeLabel = @"Media";
     _volumeLevel = 0.5;
     _isVisible = NO;
 }

@@ -98,10 +98,6 @@ stage_tweak() {
         cp "$ROOT/Preferences/legacyui.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
     fi
 
-    if [ -f "$ROOT/Preferences/legacyui-settings.plist" ]; then
-        cp "$ROOT/Preferences/legacyui-settings.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
-    fi
-
     cp "$CONTROL" "$STAGE/DEBIAN/control"
     chmod 644 "$STAGE/DEBIAN/control"
 
@@ -131,9 +127,7 @@ validate_deb() {
     grep -q "Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.plist$" "$BUILD/_contents" \
         || die "MobileSubstrate filter plist missing in deb"
     grep -q "Library/PreferenceLoader/Preferences/legacyui.plist$" "$BUILD/_contents" \
-        || die "PreferenceLoader entry missing in deb"
-    grep -q "Library/PreferenceLoader/Preferences/legacyui-settings.plist$" "$BUILD/_contents" \
-        || die "PreferenceLoader settings missing in deb"
+        || die "PreferenceLoader pane missing in deb"
     echo "== validation OK =="
 }
 

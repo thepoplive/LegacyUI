@@ -14,6 +14,43 @@ static BOOL LUIDockWanted() {
     return config.enabled && config.dockEnabled && config.liquidGlassEnabled;
 }
 
+// Verified in iOS 8.0 SBDockView.h (class-dump): ivars exist on the class,
+// so object_getIvar never throws (unlike KVC on a missing key).
+static UIView *LUIDockIvarView(id dockView, NSString *ivarName) {
+    Ivar ivar = class_getInstanceVariable([dockView class], [ivarName UTF8String]);
+    if (!ivar) return nil;
+    id value = object_getIvar(dockView, ivar);
+    if ([value isKindOfClass:[UIView class]]) return value;
+    return nil;
+}
+
+static void LUIDockSetNativeBackgroundHidden(id dockView, BOOL hidden) {
+    NSArray *backgroundIvars = @[ @"_backgroundView", @"_backgroundImageView", @"_accessibilityBackgroundView" ];
+    for (NSString *ivarName in backgroundIvars) {
+        UIView *view = LUIDockIvarView(dockView, ivarName);
+        if (view) view.hidden = hidden;
+    }
+}
+
+static void LUIDockSetLabelsHiddenRecursive(UIView *view, BOOL hidden) {
+    for (UIView *sub in view.subviews) {
+        if ([NSStringFromClass([sub class]) rangeOfString:@"IconLabel"].location != NSNotFound) {
+            sub.hidden = hidden;
+        }
+        LUIDockSetLabelsHiddenRecursive(sub, hidden);
+    }
+}
+
+static void LUIDockCenterIconList(id dockView) {
+    // -dockListView is a verified SBDockView method (iOS 8.0 header).
+    if (!class_getInstanceMethod([dockView class], @selector(dockListView))) return;
+    UIView *iconList = [dockView performSelector:@selector(dockListView)];
+    if (![iconList isKindOfClass:[UIView class]]) return;
+    if (iconList.superview != (UIView *)dockView) return;
+    iconList.center = CGPointMake(((UIView *)dockView).bounds.size.width / 2.0,
+                                  ((UIView *)dockView).bounds.size.height / 2.0);
+}
+
 static void LUIDockUpdateGlass(UIView *dockView) {
     CUIDockView *glass = objc_getAssociatedObject(dockView, &kDockGlassAssociationKey);
 
@@ -22,9 +59,15 @@ static void LUIDockUpdateGlass(UIView *dockView) {
             [glass removeFromSuperview];
             objc_setAssociatedObject(dockView, &kDockGlassAssociationKey, nil,
                                      OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            LUIDockSetNativeBackgroundHidden(dockView, NO);
+            LUIDockSetLabelsHiddenRecursive(dockView, NO);
         }
         return;
     }
+
+    LUIDockSetNativeBackgroundHidden(dockView, YES);
+    LUIDockSetLabelsHiddenRecursive(dockView, YES);
+    LUIDockCenterIconList(dockView);
 
     if (!glass) {
         glass = [[CUIDockView alloc] initWithFrame:CGRectInset(dockView.bounds, 5, 3)];
@@ -46,8 +89,7 @@ static void LUIDockUpdateGlass(UIView *dockView) {
 
         objc_setAssociatedObject(dockView, &kDockGlassAssociationKey, glass,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        NSLog(@"[LegacyUI] Dock glass installed on %@",
-              NSStringFromClass([dockView class]));
+        NSLog(@"[LegacyUI] Dock glass installed");
     }
 
     glass.frame = CGRectInset(dockView.bounds, 5, 3);
@@ -88,7 +130,6 @@ static void LUIDockLayoutSwizzled(id self, SEL _cmd) {
 
         if (class_addMethod(dockClass, @selector(layoutSubviews),
                             (IMP)LUIDockLayoutSwizzled, method_getTypeEncoding(method))) {
-            // SBDockView did not override layoutSubviews; call the inherited one.
             g_origDockLayout = method_getImplementation(method);
         } else {
             g_origDockLayout = method_setImplementation(method, (IMP)LUIDockLayoutSwizzled);

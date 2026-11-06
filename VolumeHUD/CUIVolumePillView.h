@@ -5,8 +5,10 @@ typedef void (^CUIVolumeChangeBlock)(float volume);
 @interface CUIVolumePillView : UIView
 
 @property (nonatomic, assign) float volumeLevel;
-@property (nonatomic, copy) NSString *volumeTitle;
 @property (nonatomic, copy) CUIVolumeChangeBlock onVolumeUserChange;
+
+- (void)configureAsVolume;
+- (void)configureAsMuteSilent:(BOOL)silent;
 
 - (void)showWithAnimation;
 - (void)hideWithAnimation;

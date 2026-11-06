@@ -27,6 +27,9 @@ require_macos() {
 VERSION="$(sed -n 's/^Version: *//p' "$CONTROL" | tr -d '[:space:]')"
 [ -n "$VERSION" ] || die "cannot read Version from $CONTROL"
 
+# dpkg-deb requires a trailing newline in control.
+tail -c1 "$CONTROL" | read -r _ || echo >> "$CONTROL"
+
 include_flags() {
     local dirs="" d
     while IFS= read -r d; do

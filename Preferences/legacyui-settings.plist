@@ -9,16 +9,22 @@
             <string>PSGroupCell</string>
             <key>label</key>
             <string>General</string>
+            <key>footerText</key>
+            <string>Master switch disables all LegacyUI modifications.</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>Enabled</string>
             <key>label</key>
             <string>LegacyUI Enabled</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -29,42 +35,58 @@
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>LockScreenEnabled</string>
             <key>label</key>
-            <string>Lock Screen Enabled</string>
+            <string>Lock Screen</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>AdaptiveClockEnabled</string>
             <key>label</key>
             <string>Adaptive Clock</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>AdaptiveNotificationsEnabled</string>
             <key>label</key>
             <string>Adaptive Notifications</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>PasscodeAppearanceEnabled</string>
             <key>label</key>
             <string>Passcode Appearance</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -75,22 +97,30 @@
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>DockEnabled</string>
             <key>label</key>
             <string>Dock Enabled</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>LiquidGlassEnabled</string>
             <key>label</key>
-            <string>Liquid Glass Dock</string>
+            <string>Liquid Glass</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -101,12 +131,16 @@
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>ControlCenterEnabled</string>
             <key>label</key>
             <string>Control Center Enabled</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
@@ -117,33 +151,61 @@
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>VolumeHUDEnabled</string>
             <key>label</key>
             <string>Volume HUD Enabled</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>VolumePillEnabled</string>
             <key>label</key>
             <string>Volume Pill</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
         </dict>
         <dict>
             <key>cell</key>
             <string>PSSwitchCell</string>
-            <key>default</key>
-            <true/>
+            <key>defaults</key>
+            <string>com.legacyui.settings</string>
             <key>key</key>
             <string>SilentHUDEnabled</string>
             <key>label</key>
             <string>Silent Mode Indicator</string>
+            <key>default</key>
+            <true/>
+            <key>PostNotification</key>
+            <string>com.legacyui.settings.changed</string>
+        </dict>
+        <dict>
+            <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>About</string>
+        </dict>
+        <dict>
+            <key>cell</key>
+            <string>PSStaticTextCell</string>
+            <key>label</key>
+            <string>LegacyUI 0.1.0</string>
+            <key>detail</key>
+            <string>Liquid Glass redesign for iOS 8.0–8.4.1</string>
         </dict>
     </array>
+    <key>title</key>
+    <string>LegacyUI</string>
 </dict>
 </plist>

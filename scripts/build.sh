@@ -85,8 +85,17 @@ stage_tweak() {
     cp "$BUILD/${TWEAK_NAME}.dylib" "$STAGE/Library/MobileSubstrate/DynamicLibraries/"
     chmod 755 "$STAGE/Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.dylib"
 
-    if [ -f "$ROOT/Preferences/Entry.plist" ]; then
-        cp "$ROOT/Preferences/Entry.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
+    if [ -f "$ROOT/${TWEAK_NAME}.plist" ]; then
+        cp "$ROOT/${TWEAK_NAME}.plist" "$STAGE/Library/MobileSubstrate/DynamicLibraries/"
+        chmod 644 "$STAGE/Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.plist"
+    fi
+
+    if [ -f "$ROOT/Preferences/legacyui.plist" ]; then
+        cp "$ROOT/Preferences/legacyui.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
+    fi
+
+    if [ -f "$ROOT/Preferences/legacyui-settings.plist" ]; then
+        cp "$ROOT/Preferences/legacyui-settings.plist" "$STAGE/Library/PreferenceLoader/Preferences/"
     fi
 
     cp "$CONTROL" "$STAGE/DEBIAN/control"
@@ -95,11 +104,6 @@ stage_tweak() {
     if [ -f "$ROOT/layout/DEBIAN/postinst" ]; then
         cp "$ROOT/layout/DEBIAN/postinst" "$STAGE/DEBIAN/postinst"
         chmod 755 "$STAGE/DEBIAN/postinst"
-    fi
-
-    mkdir -p "$STAGE/var/mobile/Library/Preferences"
-    if [ -f "$ROOT/layout/var/mobile/Library/Preferences/com.legacyui.settings.plist" ]; then
-        cp "$ROOT/layout/var/mobile/Library/Preferences/com.legacyui.settings.plist" "$STAGE/var/mobile/Library/Preferences/"
     fi
 }
 
@@ -116,6 +120,16 @@ validate_deb() {
     [ -n "$deb" ] || die "no .deb in build/ — run ./scripts/build.sh package first"
     echo "== dpkg-deb -I =="
     dpkg-deb -I "$deb"
+    echo "== dpkg-deb -c (must include dylib, filter, prefs) =="
+    dpkg-deb -c "$deb" | tee "$BUILD/_contents" >/dev/null
+    grep -q "Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.dylib$" "$BUILD/_contents" \
+        || die "tweak dylib missing in deb"
+    grep -q "Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.plist$" "$BUILD/_contents" \
+        || die "MobileSubstrate filter plist missing in deb"
+    grep -q "Library/PreferenceLoader/Preferences/legacyui.plist$" "$BUILD/_contents" \
+        || die "PreferenceLoader entry missing in deb"
+    grep -q "Library/PreferenceLoader/Preferences/legacyui-settings.plist$" "$BUILD/_contents" \
+        || die "PreferenceLoader settings missing in deb"
     echo "== validation OK =="
 }
 

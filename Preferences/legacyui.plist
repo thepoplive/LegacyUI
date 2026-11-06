@@ -5,9 +5,9 @@
     <key>entry</key>
     <dict>
         <key>bundle</key>
-        <string>LegacyUI</string>
+        <string>legacyui-settings</string>
         <key>cell</key>
-        <string>PSListCell</string>
+        <string>PSLinkCell</string>
         <key>label</key>
         <string>LegacyUI</string>
     </dict>

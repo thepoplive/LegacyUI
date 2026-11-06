@@ -1,5 +1,5 @@
 #!/bin/bash
 chmod 755 /Library/MobileSubstrate/DynamicLibraries/LegacyUI.dylib
-chmod 755 /Library/PreferenceBundles/LegacyUI.bundle/LegacyUI
+chown mobile:mobile /var/mobile/Library/Preferences/com.legacyui.settings.plist 2>/dev/null || true
 killall -9 SpringBoard || true
 exit 0

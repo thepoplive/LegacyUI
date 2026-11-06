@@ -147,13 +147,13 @@ static CUIVolumePillView *_volumePillView = nil;
     NSString *category = session.category;
 
     CUIVolumeType volumeType = CUIVolumeTypeMedia;
-    if ([category isEqualToString:AVAudioSessionCategoryPlayback]) {
+    if ([category isEqualToString:@"AVAudioSessionCategoryPlayback"]) {
         volumeType = CUIVolumeTypeMedia;
-    } else if ([category isEqualToString:AVAudioSessionCategoryRingtone]) {
+    } else if ([category isEqualToString:@"AVAudioSessionCategoryRingtone"]) {
         volumeType = CUIVolumeTypeRinger;
-    } else if ([category isEqualToString:AVAudioSessionCategoryVoiceChat]) {
+    } else if ([category isEqualToString:@"AVAudioSessionCategoryVoiceChat"]) {
         volumeType = CUIVolumeTypeCall;
-    } else if ([category isEqualToString:AVAudioSessionCategoryAlert]) {
+    } else if ([category isEqualToString:@"AVAudioSessionCategoryAlert"]) {
         volumeType = CUIVolumeTypeAlarm;
     }
 

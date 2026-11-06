@@ -16,7 +16,7 @@ OBJ="$BUILD/obj"
 STAGE="$ROOT/stage"
 CONTROL="$ROOT/layout/DEBIAN/control"
 FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework MediaPlayer"
-LIBS="-lunwind"
+LIBS="$LEGACY_SDK/usr/lib/system/libunwind.tbd"
 
 die() { echo "build.sh: ERROR: $*" >&2; exit 1; }
 

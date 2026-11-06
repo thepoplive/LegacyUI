@@ -44,13 +44,13 @@
 
         _titleLabel = [[UILabel alloc] init];
         _titleLabel.text = @"Media Volume";
-        _titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+        _titleLabel.font = [UIFont systemFontOfSize:12];
         _titleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.75];
         [_contentView addSubview:_titleLabel];
 
         _percentLabel = [[UILabel alloc] init];
         _percentLabel.text = @"50%";
-        _percentLabel.font = [UIFont systemFontOfSize:24 weight:UIFontWeightBold];
+        _percentLabel.font = [UIFont boldSystemFontOfSize:24];
         _percentLabel.textColor = [UIColor whiteColor];
         _percentLabel.textAlignment = NSTextAlignmentRight;
         [_contentView addSubview:_percentLabel];

@@ -21,8 +21,6 @@ jobs:
           export THEOS=$HOME/theos
           rm -rf $THEOS
           git clone --depth 1 https://github.com/theos/theos.git $THEOS
-          echo "THEOS=$THEOS" >> $GITHUB_ENV
-          echo "$THEOS/bin" >> $GITHUB_PATH
 
       - name: Fetch iOS 10.3 SDK
         run: |
@@ -31,13 +29,19 @@ jobs:
           git clone --depth 1 --filter=blob:none --sparse \
             https://github.com/theos/sdks.git $THEOS/sdks
           git -C $THEOS/sdks sparse-checkout set iPhoneOS10.3.sdk
+          ls -la $THEOS/sdks/
+
+      - name: Set environment
+        run: |
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
 
       - name: Build tweak
         env:
           THEOS: $HOME/theos
         run: |
-          export THEOS=$HOME/theos
-          make package
+          cd $GITHUB_WORKSPACE
+          make package THEOS_DEVICE_IP=localhost
 
       - name: Validate .deb
         run: |

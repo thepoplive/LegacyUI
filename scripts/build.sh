@@ -16,6 +16,7 @@ OBJ="$BUILD/obj"
 STAGE="$ROOT/stage"
 CONTROL="$ROOT/layout/DEBIAN/control"
 FRAMEWORKS="-framework UIKit -framework Foundation -framework CoreGraphics -framework QuartzCore -framework MediaPlayer"
+LIBS="-lunwind"
 
 die() { echo "build.sh: ERROR: $*" >&2; exit 1; }
 
@@ -71,7 +72,7 @@ link_binary() {
     xcrun clang -arch "$ARCH" -miphoneos-version-min="$MIN_OS" \
         -dynamiclib -install_name /Library/MobileSubstrate/DynamicLibraries/${TWEAK_NAME}.dylib \
         -isysroot "$LEGACY_SDK" -Wl,-U,_objc_msgSend_stret \
-        -o "$BUILD/${TWEAK_NAME}.dylib" "$OBJ"/*.o $FRAMEWORKS \
+        -o "$BUILD/${TWEAK_NAME}.dylib" "$OBJ"/*.o $FRAMEWORKS $LIBS \
         || die "link failed"
     command -v ldid >/dev/null 2>&1 || die "ldid not found (brew install ldid)"
     ldid -S "$BUILD/${TWEAK_NAME}.dylib" || die "ldid signing failed"

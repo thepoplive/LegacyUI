@@ -55,14 +55,10 @@ static void LUIDockUpdateGlass(UIView *dockView) {
 
 static void LUIDockLayoutSwizzled(id self, SEL _cmd) {
     if (self == nil) return;
-    @try {
-        if (g_origDockLayout) {
-            ((void (*)(id, SEL))g_origDockLayout)(self, _cmd);
-        }
-        LUIDockUpdateGlass((UIView *)self);
-    } @catch (NSException *exception) {
-        NSLog(@"[LegacyUI] dock layout exception: %@", exception);
+    if (g_origDockLayout) {
+        ((void (*)(id, SEL))g_origDockLayout)(self, _cmd);
     }
+    LUIDockUpdateGlass((UIView *)self);
 }
 
 @implementation CUIDockController

@@ -57,9 +57,9 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
     if (![[NSFileManager defaultManager] fileExistsAtPath:marker]) return;
 
     NSMutableString *out = [NSMutableString string];
-    NSArray *classes = @[@"WiFiManager", @"BluetoothManager", @"RadiosPreferences",
-                         @"SBMediaController", @"VolumeControl", @"SpringBoard",
-                         @"SBCCWiFiSetting"];
+    NSArray *classes = @[@"WiFiManager", @"SBWiFiManager", @"BluetoothManager",
+                         @"RadiosPreferences", @"SBMediaController", @"VolumeControl",
+                         @"SpringBoard", @"SBCCWiFiSetting"];
     for (NSString *name in classes) CUICCDumpClassMethods(out, name);
     [out writeToFile:@"/var/mobile/legacyui_probe.txt"
            atomically:YES encoding:NSUTF8StringEncoding error:NULL];
@@ -176,6 +176,10 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
 
 - (BOOL)mediaPlaying {
     id controller = [self mediaController];
+    // -isPlaying verified by the on-device runtime probe (real method list).
+    if (CUICCResponds(controller, @"isPlaying")) {
+        return ((BOOL (*)(id, SEL))objc_msgSend)(controller, @selector(isPlaying));
+    }
     Ivar ivar = class_getInstanceVariable([controller class], "_lastNowPlayingAppIsPlaying");
     if (!ivar) return NO;
     void *ptr = (void *)((char *)(__bridge void *)controller + ivar_getOffset(ivar));

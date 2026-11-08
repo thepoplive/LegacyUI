@@ -57,9 +57,11 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
     if (![[NSFileManager defaultManager] fileExistsAtPath:marker]) return;
 
     NSMutableString *out = [NSMutableString string];
-    NSArray *classes = @[@"WiFiManager", @"SBWiFiManager", @"BluetoothManager",
-                         @"RadiosPreferences", @"SBMediaController", @"VolumeControl",
-                         @"SpringBoard", @"SBCCWiFiSetting"];
+    NSArray *classes = @[@"SBWiFiManager", @"BluetoothManager", @"RadiosPreferences",
+                         @"SBMediaController", @"VolumeControl", @"SpringBoard",
+                         @"SBCCWiFiSetting", @"SBBacklightController",
+                         @"SBBacklightControllerView", @"SBDoNotDisturbController",
+                         @"SBDNDState", @"SBUIController"];
     for (NSString *name in classes) CUICCDumpClassMethods(out, name);
     [out writeToFile:@"/var/mobile/legacyui_probe.txt"
            atomically:YES encoding:NSUTF8StringEncoding error:NULL];
@@ -102,14 +104,23 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
     }
 }
 
-#pragma mark Wi-Fi (wiring pending on-device probe)
+#pragma mark Wi-Fi (verified by on-device probe: SBWiFiManager
+//   +sharedInstance, -wiFiEnabled, -setWiFiEnabled:)
+
+- (id)wiFiManager {
+    return CUICCSharedInstanceFor(@"SBWiFiManager", @"sharedInstance");
+}
 
 - (BOOL)wiFiEnabled {
-    return NO;
+    id manager = [self wiFiManager];
+    if (!CUICCResponds(manager, @"wiFiEnabled")) return NO;
+    return ((BOOL (*)(id, SEL))objc_msgSend)(manager, @selector(wiFiEnabled));
 }
 
 - (void)setWiFiEnabled:(BOOL)enabled {
-    (void)enabled;
+    id manager = [self wiFiManager];
+    if (!CUICCResponds(manager, @"setWiFiEnabled:")) return;
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(manager, @selector(setWiFiEnabled:), enabled);
 }
 
 #pragma mark Do Not Disturb (iOS 6: com.apple.DoNotDisturb dndEnabled preference)

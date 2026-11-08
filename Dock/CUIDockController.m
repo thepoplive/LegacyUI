@@ -209,12 +209,13 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         if (!iconList8) iconList8 = iconList;
 
         if (iconList8 && iconList8.superview == hostView) {
-            // Center the icon graphics (label zone trimmed) in the dock.
+            // Center the icon graphics (label zone trimmed) in the dock;
+            // nudged a touch below dead-center like the 3GS layout.
             CGRect unionRect = LUIDockIconUnionFrame(iconList8);
             if (!CGRectIsNull(unionRect)) {
                 CGFloat labelTrim = MIN(18.0, unionRect.size.height * 0.28);
                 unionRect.size.height -= labelTrim;
-                CGFloat targetY = hostView.bounds.size.height / 2.0;
+                CGFloat targetY = hostView.bounds.size.height / 2.0 + 3.0;
                 CGFloat offset = targetY - (unionRect.origin.y + unionRect.size.height / 2.0);
                 iconList8.center = CGPointMake(iconList8.center.x,
                                                 iconList8.center.y + offset);
@@ -225,12 +226,12 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         }
 
         // Glass hugs the icon graphics exactly like the iOS 6 (3GS) layout:
-        // union frame with the label zone trimmed, small padding, clamped.
+        // union frame with the label zone trimmed, wide padding, clamped.
         CGRect unionRect = iconList8 ? LUIDockIconUnionFrame(iconList8) : CGRectNull;
         if (!CGRectIsNull(unionRect)) {
             CGFloat labelTrim = MIN(18.0, unionRect.size.height * 0.28);
             unionRect.size.height -= labelTrim;
-            CGFloat padX = 8.0, padY = 6.0;
+            CGFloat padX = 11.0, padY = 12.0;
             glassFrame = CGRectMake(unionRect.origin.x - padX,
                                      unionRect.origin.y - padY,
                                      unionRect.size.width + padX * 2.0,

@@ -43,6 +43,74 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
     free(methods);
 }
 
+// Ivar names + offsets of a shared instance (SpringBoard itself) — verifies
+// where the live backlight level is stored on this exact firmware.
+static void CUICCDumpIvars(NSMutableString *out, NSString *className) {
+    Class cls = NSClassFromString(className);
+    if (!cls) return;
+    unsigned int count = 0;
+    Ivar *ivars = class_copyIvarList(cls, &count);
+    [out appendFormat:@"\n===== ivars of %@ =====\n", className];
+    for (unsigned int i = 0; i < count; i++) {
+        [out appendFormat:@"  %@ @%zu\n",
+            ivar_getName(ivars[i]) ?: @"<unnamed>",
+            ivar_getOffset(ivars[i])];
+    }
+    free(ivars);
+}
+
+// Call verified getters on shared instances and log the returned values —
+// resolves "which selector reports the true service state" empirically.
+// Returns -1 when the selector does not respond.
+static int CUIBoolMessage(id object, NSString *selector) {
+    if (!CUICCResponds(object, selector)) return -1;
+    return ((int (*)(id, SEL))objc_msgSend)(object, NSSelectorFromString(selector));
+}
+
+static void CUICCReadLiveStates(NSMutableString *out) {
+    [out appendFormat:@"\n===== live states =====\n"];
+
+    id bt = CUICCSharedInstanceFor(@"BluetoothManager", @"sharedInstance");
+    [out appendFormat:@"  BluetoothManager powered=%d enabled=%d available=%d connectable=%d\n",
+        CUIBoolMessage(bt, @"powered"),
+        CUIBoolMessage(bt, @"enabled"),
+        CUIBoolMessage(bt, @"available"),
+        CUIBoolMessage(bt, @"connectable")];
+
+    id wifi = CUICCSharedInstanceFor(@"SBWiFiManager", @"sharedInstance");
+    [out appendFormat:@"  SBWiFiManager wiFiEnabled=%d isPowered=%d\n",
+        CUIBoolMessage(wifi, @"wiFiEnabled"),
+        CUIBoolMessage(wifi, @"isPowered")];
+
+    id radios = [[NSClassFromString(@"RadiosPreferences") alloc] init];
+    [out appendFormat:@"  RadiosPreferences airplaneMode=%d\n",
+        CUIBoolMessage(radios, @"airplaneMode")];
+
+    id media = CUICCSharedInstanceFor(@"SBMediaController", @"sharedInstance");
+    [out appendFormat:@"  SBMediaController isPlaying=%d hasTrack=%d\n",
+        CUIBoolMessage(media, @"isPlaying"),
+        CUIBoolMessage(media, @"hasTrack")];
+
+    // Where does SpringBoard keep its backlight? Direct ivar probe.
+    id sb = [UIApplication sharedApplication];
+    for (NSString *name in @[@"_currentBacklightLevel", @"currentBacklightLevel",
+                             @"_backlightFactor", @"_backlightLevel"]) {
+        Ivar ivar = class_getInstanceVariable([sb class],
+                                              [name UTF8String]);
+        if (!ivar) {
+            [out appendFormat:@"  ivar %@ <absent>\n", name];
+            continue;
+        }
+        void *ptr = (void *)((char *)(__bridge void *)sb + ivar_getOffset(ivar));
+        [out appendFormat:@"  ivar %@ @%lu = %.3f\n", name,
+            (unsigned long)ivar_getOffset(ivar), *(float *)ptr];
+    }
+
+    CFPropertyListRef dnd = CFPreferencesCopyAppValue(
+        (CFStringRef)@"dndEnabled", (CFStringRef)@"com.apple.DoNotDisturb");
+    [out appendFormat:@"  dndEnabled pref = %@\n", dnd ? CFBridgingRelease(dnd) : @"<absent>"];
+}
+
 @implementation CUICCServiceBridge
 
 + (instancetype)sharedBridge {
@@ -63,6 +131,8 @@ static void CUICCDumpClassMethods(NSMutableString *out, NSString *className) {
                          @"SBBacklightControllerView", @"SBDoNotDisturbController",
                          @"SBDNDState", @"SBUIController"];
     for (NSString *name in classes) CUICCDumpClassMethods(out, name);
+    CUICCDumpIvars(out, @"SpringBoard"); // ivar list of the UIApplication singleton class
+    CUICCReadLiveStates(out);
     [out writeToFile:@"/var/mobile/legacyui_probe.txt"
            atomically:YES encoding:NSUTF8StringEncoding error:NULL];
     [[NSFileManager defaultManager] removeItemAtPath:marker error:NULL];

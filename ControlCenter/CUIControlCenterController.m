@@ -92,6 +92,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     }
 
     _grabber = [CUIControlCenterGrabber attachToView:hostView];
+    _grabber.triggerHeight = 300.0;
     _grabber.onGestureStart = ^{
         [self beginInteractiveOpen];
     };
@@ -105,7 +106,8 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 }
 
 // Verified in iOS 6.1 SBIconController.h: - (id)contentView; the scroll view
-// with icon pages is a subview, so a strip added on top of contentView works.
+// with icon pages is a subview of contentView, so we attach above contentView:
+// to its superview when possible (guaranteed top of the home screen stack).
 - (UIView *)homeScreenHostView {
     Class controllerClass = NSClassFromString(@"SBIconController");
     if (!controllerClass) return nil;
@@ -114,8 +116,10 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     if (!shared) return nil;
     if (![shared respondsToSelector:@selector(contentView)]) return nil;
     UIView *contentView = [shared performSelector:@selector(contentView)];
-    if ([contentView isKindOfClass:[UIView class]]) return contentView;
-    return nil;
+    if (![contentView isKindOfClass:[UIView class]]) return nil;
+
+    if (contentView.superview) return contentView.superview;
+    return contentView;
 }
 
 #pragma mark - Open / close
@@ -126,7 +130,8 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 
 - (void)ensurePanelInView:(UIView *)hostView {
     if (_panelView) return;
-    _panelView = [[CUIControlCenterView alloc] initWithFrame:hostView.bounds];
+    CGRect screenFrame = [hostView convertRect:[UIScreen mainScreen].bounds fromView:nil];
+    _panelView = [[CUIControlCenterView alloc] initWithFrame:screenFrame];
     _panelView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _panelView.hidden = YES;
     _panelView.onOutsideTap = ^{

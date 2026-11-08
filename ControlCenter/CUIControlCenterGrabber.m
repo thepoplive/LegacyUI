@@ -11,22 +11,37 @@
 
 @implementation CUIControlCenterGrabber
 
-+ (instancetype)attachToView:(UIView *)hostView {
-    CUIControlCenterGrabber *grabber = [[CUIControlCenterGrabber alloc]
-        initWithFrame:CGRectMake(0, hostView.bounds.size.height - 16.0,
-                                 hostView.bounds.size.width, 16.0)];
-    grabber.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
-    grabber.backgroundColor = [UIColor clearColor];
-    grabber.triggerHeight = 300.0;
-    [hostView addSubview:grabber];
-    return grabber;
+- (void)trace:(NSString *)line {
+    NSString *path = @"/var/mobile/legacyui_cc_trace.txt";
+    NSMutableString *content = [NSMutableString stringWithContentsOfFile:path
+                                                               usedEncoding:NULL error:NULL];
+    if (!content) content = [NSMutableString string];
+    [content appendFormat:@"[%@] %@\n",
+        [NSDate date], line];
+    [content writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL];
 }
 
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    if (self.superview) {
-        self.triggerHeight = self.superview.bounds.size.height * 0.65;
-    }
++ (instancetype)attachToView:(UIView *)hostView {
+    CUIControlCenterGrabber *grabber = [[CUIControlCenterGrabber alloc]
+        initWithFrame:CGRectMake(0, 0, 320, 16)];
+    grabber.backgroundColor = [UIColor clearColor];
+
+    // Position strictly in screen coordinates: the SpringBoard content view
+    // can be taller than the screen (dock slides in from below its bounds).
+    CGRect screenStrip = CGRectMake(0, [UIScreen mainScreen].bounds.size.height - 16.0,
+                                    [UIScreen mainScreen].bounds.size.width, 16.0);
+    CGRect frameInHost = [hostView convertRect:screenStrip fromView:nil];
+    grabber.frame = frameInHost;
+    grabber.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+    [hostView addSubview:grabber];
+
+    [(CUIControlCenterGrabber *)grabber trace:[NSString stringWithFormat:
+        @"grabber attached host=%@ hostBounds=%@ frame=%@",
+        NSStringFromClass([hostView class]),
+        NSStringFromCGRect(hostView.bounds),
+        NSStringFromCGRect(grabber.frame)]];
+
+    return grabber;
 }
 
 #pragma mark - Touches
@@ -39,6 +54,7 @@
     _lastY = point.y;
     _lastTime = CACurrentMediaTime();
     _velocity = 0;
+    [self trace:[NSString stringWithFormat:@"touch began at %@", NSStringFromCGPoint(point)]];
     if (self.onGestureStart) self.onGestureStart();
 }
 
@@ -57,7 +73,7 @@
     }
 
     CGFloat travel = _startY - point.y;
-    float progress = (float)(travel / _triggerHeight);
+    float progress = (float)(travel / 300.0);
     if (progress < 0) progress = 0;
     if (progress > 1) progress = 1;
     if (self.onGestureProgress) self.onGestureProgress(progress);
@@ -68,6 +84,7 @@
 }
 
 - (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+    [self trace:@"touch cancelled"];
     [self finish];
 }
 
@@ -75,9 +92,11 @@
     if (!_tracking) return;
     _tracking = NO;
     CGFloat travel = _startY - _lastY;
-    float progress = (float)(travel / _triggerHeight);
+    float progress = (float)(travel / 300.0);
     if (progress < 0) progress = 0;
     if (progress > 1) progress = 1;
+    [self trace:[NSString stringWithFormat:@"touch finish progress=%.2f velocity=%.0f",
+        progress, _velocity]];
     if (self.onGestureFinish) self.onGestureFinish(progress, _velocity);
 }
 

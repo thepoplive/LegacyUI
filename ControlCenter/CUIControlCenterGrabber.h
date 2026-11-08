@@ -15,4 +15,6 @@ typedef void (^CUICCGestureFinish)(float progress, float velocity); // >0 upward
 
 + (instancetype)attachToView:(UIView *)hostView;
 
+- (void)trace:(NSString *)line;
+
 @end

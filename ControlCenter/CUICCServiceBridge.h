@@ -21,8 +21,9 @@
 - (BOOL)airplaneMode;
 - (void)setAirplaneMode:(BOOL)enabled;
 
-- (BOOL)wiFiEnabled;          // pending probe-driven wiring
+- (BOOL)wiFiEnabled;
 - (void)setWiFiEnabled:(BOOL)enabled;
+- (BOOL)wiFiPowered; // live radio power (glow source)
 
 - (BOOL)doNotDisturbEnabled;
 - (void)setDoNotDisturbEnabled:(BOOL)enabled;

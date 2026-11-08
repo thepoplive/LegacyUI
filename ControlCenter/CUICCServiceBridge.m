@@ -132,6 +132,48 @@ static void CUICCReadLiveStates(NSMutableString *out) {
         ((void (*)(id, SEL, float))objc_msgSend)(sb, @selector(setBacklightFactor:), 0.70f);
     }
 
+    // SBBrightnessController: the proper iOS 6 brightness path (headers).
+    // Does -setBrightnessLevel: move the SpringBoard ivar?
+    id brightCtl = CUICCSharedInstanceFor(@"SBBrightnessController", @"sharedBrightnessController");
+    if (CUICCResponds(brightCtl, @"setBrightnessLevel:")) {
+        ((void (*)(id, SEL, float))objc_msgSend)(brightCtl, @selector(setBrightnessLevel:), 0.30f);
+        usleep(800000); // 800 ms: give the controller time to apply
+        Ivar ivar = class_getInstanceVariable([sb class], "_currentBacklightLevel");
+        float value = ivar
+            ? *(float *)((char *)(__bridge void *)sb + ivar_getOffset(ivar))
+            : -1.0f;
+        [out appendFormat:@"  after SBBrightnessController setBrightnessLevel:0.30 -> ivar=%.4f\n",
+            value];
+        ((void (*)(id, SEL, float))objc_msgSend)(brightCtl, @selector(setBrightnessLevel:), 0.70f);
+    } else {
+        [out appendFormat:@"  SBBrightnessController <unavailable or selector missing>\n"];
+    }
+
+    // SBStatusBarDataManager: shared instance + quiet mode refresh available?
+    id sbdm = CUICCSharedInstanceFor(@"SBStatusBarDataManager", @"sharedDataManager");
+    [out appendFormat:@"  SBStatusBarDataManager shared=%@ _updateQuietModeItem=%d\n",
+        sbdm ? @"yes" : @"no",
+        CUIBoolMessage(sbdm, @"_updateQuietModeItem") != -1];
+
+    // Does a programmatic SBWiFiManager toggle move its state getters?
+    id wifiMgr = CUICCSharedInstanceFor(@"SBWiFiManager", @"sharedInstance");
+    if (CUIBoolMessage(wifiMgr, @"isPowered") >= 0) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(wifiMgr, @selector(setWiFiEnabled:), NO);
+        usleep(1500000); // 1.5 s
+        [out appendFormat:@"  after setWiFiEnabled:NO -> wiFiEnabled=%d isPowered=%d\n",
+            CUIBoolMessage(wifiMgr, @"wiFiEnabled"),
+            CUIBoolMessage(wifiMgr, @"isPowered")];
+        usleep(2500000); // +2.5 s
+        [out appendFormat:@"  after setWiFiEnabled:NO +4s -> wiFiEnabled=%d isPowered=%d\n",
+            CUIBoolMessage(wifiMgr, @"wiFiEnabled"),
+            CUIBoolMessage(wifiMgr, @"isPowered")];
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(wifiMgr, @selector(setWiFiEnabled:), YES);
+        usleep(2000000);
+        [out appendFormat:@"  after setWiFiEnabled:YES -> wiFiEnabled=%d isPowered=%d\n",
+            CUIBoolMessage(wifiMgr, @"wiFiEnabled"),
+            CUIBoolMessage(wifiMgr, @"isPowered")];
+    }
+
     CFPropertyListRef dnd = CFPreferencesCopyAppValue(
         (CFStringRef)@"dndEnabled", (CFStringRef)@"com.apple.DoNotDisturb");
     [out appendFormat:@"  dndEnabled pref = %@\n", dnd ? CFBridgingRelease(dnd) : @"<absent>"];
@@ -153,9 +195,9 @@ static void CUICCReadLiveStates(NSMutableString *out) {
     NSMutableString *out = [NSMutableString string];
     NSArray *classes = @[@"SBWiFiManager", @"BluetoothManager", @"RadiosPreferences",
                          @"SBMediaController", @"VolumeControl", @"SpringBoard",
-                         @"SBCCWiFiSetting", @"SBBacklightController",
-                         @"SBBacklightControllerView", @"SBDoNotDisturbController",
-                         @"SBDNDState", @"SBUIController"];
+                         @"SBCCWiFiSetting", @"SBBrightnessController",
+                         @"SBStatusBarDataManager", @"SBStatusBarController",
+                         @"SBDoNotDisturbController", @"SBDNDState", @"SBUIController"];
     for (NSString *name in classes) CUICCDumpClassMethods(out, name);
     CUICCDumpIvars(out, @"SpringBoard"); // ivar list of the UIApplication singleton class
     CUICCReadLiveStates(out);
@@ -219,8 +261,19 @@ static void CUICCReadLiveStates(NSMutableString *out) {
     ((void (*)(id, SEL, BOOL))objc_msgSend)(manager, @selector(setWiFiEnabled:), enabled);
 }
 
+// -isPowered verified by the on-device probe: actual Wi-Fi radio power.
+// SBWiFiManager -wiFiEnabled tracks the Settings switch state and did not
+// reflect programmatic toggles, so the glow is driven from the radio state.
+- (BOOL)wiFiPowered {
+    id manager = [self wiFiManager];
+    if (!CUICCResponds(manager, @"isPowered")) return NO;
+    return ((BOOL (*)(id, SEL))objc_msgSend)(manager, @selector(isPowered));
+}
+
 #pragma mark Do Not Disturb (iOS 6: com.apple.DoNotDisturb dndEnabled preference)
 
+// Settings.app writes the mobile user domain; SpringBoard does NOT re-read
+// the AnyUser (root) file, so the status-bar moon never shows. Match Settings.
 - (BOOL)doNotDisturbEnabled {
     CFPropertyListRef value = CFPreferencesCopyAppValue(
         (CFStringRef)@"dndEnabled", (CFStringRef)@"com.apple.DoNotDisturb");
@@ -234,29 +287,57 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 - (void)setDoNotDisturbEnabled:(BOOL)enabled {
     CFPreferencesSetValue(
         (CFStringRef)@"dndEnabled", (CFPropertyListRef)@(enabled),
-        (CFStringRef)@"com.apple.DoNotDisturb", kCFPreferencesAnyUser, kCFPreferencesCurrentHost);
+        (CFStringRef)@"com.apple.DoNotDisturb", kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
     CFPreferencesSynchronize(
-        (CFStringRef)@"com.apple.DoNotDisturb", kCFPreferencesAnyUser, kCFPreferencesCurrentHost);
+        (CFStringRef)@"com.apple.DoNotDisturb", kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
         (CFStringRef)@"com.apple.DoNotDisturb.changed", NULL, NULL, TRUE);
+
+    // The iOS 6 status-bar moon (quiet mode item) re-reads prefs here —
+    // verified +sharedDataManager and -_updateQuietModeItem in the 6.1 dumps
+    // of SBStatusBarDataManager. Direct refresh is deterministic; the Darwin
+    // broadcast above covers any other listeners.
+    id manager = CUICCSharedInstanceFor(@"SBStatusBarDataManager", @"sharedDataManager");
+    if (CUICCResponds(manager, @"_updateQuietModeItem")) {
+        [manager performSelector:@selector(_updateQuietModeItem)];
+    }
 }
 
-#pragma mark Brightness (verified: SpringBoard setBacklightFactor: / _currentBacklightLevel)
+#pragma mark Brightness (verified: SBBrightnessController iOS 6.1 headers)
+
+// The SpringBoard ivar _currentBacklightLevel is NOT updated by
+// setBacklightFactor: on-device (probe: stays 0.0), so the getter tracks the
+// last pushed level; when the ivar shows a live value it wins.
+static float s_lastBrightness = 0.0;
+
+- (id)brightnessController {
+    return CUICCSharedInstanceFor(@"SBBrightnessController", @"sharedBrightnessController");
+}
 
 - (float)brightness {
     id app = [UIApplication sharedApplication];
     Ivar ivar = class_getInstanceVariable([app class], "_currentBacklightLevel");
-    if (!ivar) return 0.5;
-    // float ivar: read raw memory to avoid broken object bridging.
-    void *ptr = (void *)((char *)(__bridge void *)app + ivar_getOffset(ivar));
-    return *(float *)ptr;
+    if (ivar) {
+        float value = *(float *)((char *)(__bridge void *)app + ivar_getOffset(ivar));
+        if (value > 0.001f && value <= 1.0f) return value;
+    }
+    return s_lastBrightness > 0.0f ? s_lastBrightness : 0.75f;
 }
 
 - (void)setBrightness:(float)level {
-    id app = [UIApplication sharedApplication];
-    if (![app respondsToSelector:@selector(setBacklightFactor:)]) return;
-    ((void (*)(id, SEL, float))objc_msgSend)(app, @selector(setBacklightFactor:), level);
+    id controller = [self brightnessController];
+    // _setBrightnessLevel:showHUD: / setBrightnessLevel: verified in
+    // SBBrightnessController.h (iOS 6.1) — the system path SpringBoard uses
+    // itself; setBacklightFactor: froze touch handling on the 3GS.
+    if (CUICCResponds(controller, @"setBrightnessLevel:")) {
+        ((void (*)(id, SEL, float))objc_msgSend)(controller, @selector(setBrightnessLevel:), level);
+    } else {
+        id sb = [UIApplication sharedApplication];
+        if (![sb respondsToSelector:@selector(setBacklightFactor:)]) return;
+        ((void (*)(id, SEL, float))objc_msgSend)(sb, @selector(setBacklightFactor:), level);
+    }
+    s_lastBrightness = level;
 }
 
 #pragma mark Media (verified: SBMediaController.h iOS 6.1)

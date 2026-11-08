@@ -10,5 +10,6 @@
 - (BOOL)isOpen;
 - (void)openControlCenter;
 - (void)closeControlCenter;
+- (void)updateGrabberVisibility;
 
 @end

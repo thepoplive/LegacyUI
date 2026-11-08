@@ -3,6 +3,7 @@
 #import "CUIControlCenterGrabber.h"
 #import "../Core/CUIConfiguration.h"
 #import "../Core/CUICompatibility.h"
+#import "../Core/CUIOverlayWindow.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -22,6 +23,38 @@ static void CUICCTrace(NSString *line) {
 }
 
 static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event);
+
+// Verified in iOS 6.1 SpringBoard.h: - (void)frontDisplayDidChange;
+static IMP g_origFrontDisplayDidChange = NULL;
+
+static void CUICCFrontDisplaySwizzled(id self, SEL _cmd) {
+    if (g_origFrontDisplayDidChange) {
+        ((void (*)(id, SEL))g_origFrontDisplayDidChange)(self, _cmd);
+    }
+    [[CUIControlCenterController sharedInstance] updateGrabberVisibility];
+}
+
+static void CUICCSwizzleFrontDisplay() {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Class sbClass = NSClassFromString(@"SpringBoard");
+        if (!sbClass) return;
+        Method method = class_getInstanceMethod(sbClass, @selector(frontDisplayDidChange));
+        if (!method) {
+            CUICCTrace(@"frontDisplayDidChange unavailable");
+            return;
+        }
+        if (class_addMethod(sbClass, @selector(frontDisplayDidChange),
+                            (IMP)CUICCFrontDisplaySwizzled,
+                            method_getTypeEncoding(method))) {
+            g_origFrontDisplayDidChange = method_getImplementation(method);
+        } else {
+            g_origFrontDisplayDidChange = method_setImplementation(method,
+                                                                    (IMP)CUICCFrontDisplaySwizzled);
+        }
+        CUICCTrace(@"frontDisplayDidChange swizzled");
+    });
+}
 
 static void CUICCSwizzleMenuButton() {
     dispatch_once(&g_ccSwizzleOnce, ^{
@@ -83,33 +116,36 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     }
     CUICCTrace(@"activate");
     CUICCSwizzleMenuButton();
+    CUICCSwizzleFrontDisplay();
     [self installGrabber];
 }
 
 - (void)deactivate {
-    [_grabber removeFromSuperview];
-    _grabber = nil;
+    _grabber.hidden = YES;
     [_panelView closeAnimated:nil];
 }
 
+// The iOS 6 home screen (SBIconContentView) is a windowless tree driven by
+// SB's own GSEvent routing — UIKit touches never reach it. Real UIWindows
+// work (the volume pill proves it), so the strip and the panel live in our
+// overlay window and are visibility-gated to the home screen only.
 - (void)installGrabber {
-    if (_grabber) return;
+    if (_grabber) {
+        [self updateGrabberVisibility];
+        return;
+    }
 
-    UIView *hostView = [self homeScreenHostView];
-    if (!hostView) {
-        CUICCTrace(@"installGrabber: host nil, retrying");
+    UIWindow *window = CUISharedOverlayWindow();
+    if (!window) {
+        CUICCTrace(@"installGrabber: overlay window nil, retrying");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             [self activate];
         });
         return;
     }
-    CUICCTrace([NSString stringWithFormat:@"installGrabber: host=%@ bounds=%@",
-                NSStringFromClass([hostView class]), NSStringFromCGRect(hostView.bounds)]);
 
-    [self dumpWindowHierarchyIfNeeded:hostView];
-
-    _grabber = [CUIControlCenterGrabber attachToView:hostView];
+    _grabber = [CUIControlCenterGrabber attachToView:window];
     _grabber.triggerHeight = 300.0;
     _grabber.onGestureStart = ^{
         [self beginInteractiveOpen];
@@ -120,42 +156,34 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     _grabber.onGestureFinish = ^(float progress, float velocity) {
         [self finishInteractiveOpen:progress velocity:velocity];
     };
-    NSLog(@"[LegacyUI] CC grabber installed on %@", NSStringFromClass([hostView class]));
+    CUICCTrace([NSString stringWithFormat:@"grabber installed in window %@ frame=%@",
+                NSStringFromClass([window class]), NSStringFromCGRect(_grabber.frame)]);
+    [self updateGrabberVisibility];
+}
+
+// v1: strip visible only on the home screen (no frontmost app, not locked).
+- (void)updateGrabberVisibility {
+    if (!_grabber) return;
+
+    BOOL locked = NO;
+    id app = [UIApplication sharedApplication];
+    if ([app respondsToSelector:@selector(isLocked)]) {
+        locked = [app performSelector:@selector(isLocked)];
+    }
+
+    BOOL appFrontmost = NO;
+    if ([app respondsToSelector:@selector(_accessibilityFrontMostApplication)]) {
+        id frontmost = [app performSelector:@selector(_accessibilityFrontMostApplication)];
+        appFrontmost = (frontmost != nil);
+    }
+
+    BOOL visible = ![self moduleWanted] ? NO : (!locked && !appFrontmost);
+    _grabber.hidden = !visible;
 }
 
 // Verified in iOS 6.1 SBIconController.h: - (id)contentView; the scroll view
 // with icon pages is a subview of contentView, so we attach above contentView:
 // to its superview when possible (guaranteed top of the home screen stack).
-- (UIView *)homeScreenHostView {
-    Class controllerClass = NSClassFromString(@"SBIconController");
-    if (!controllerClass) {
-        CUICCTrace(@"host: SBIconController class nil");
-        return nil;
-    }
-    if (!class_getClassMethod(controllerClass, @selector(sharedInstance))) {
-        CUICCTrace(@"host: sharedInstance missing");
-        return nil;
-    }
-    id shared = [controllerClass performSelector:@selector(sharedInstance)];
-    if (!shared) {
-        CUICCTrace(@"host: sharedInstance nil");
-        return nil;
-    }
-    if (![shared respondsToSelector:@selector(contentView)]) {
-        CUICCTrace(@"host: contentView missing");
-        return nil;
-    }
-    UIView *contentView = [shared performSelector:@selector(contentView)];
-    if (![contentView isKindOfClass:[UIView class]]) {
-        CUICCTrace(@"host: contentView not a view");
-        return nil;
-    }
-
-    if (contentView.superview) {
-        return contentView.superview;
-    }
-    return contentView;
-}
 
 #pragma mark - Open / close
 
@@ -163,35 +191,10 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     return _open;
 }
 
-- (void)dumpWindowHierarchyIfNeeded:(UIView *)view {
-    NSString *marker = @"/var/mobile/.legacyui_cc_dump";
-    if (![[NSFileManager defaultManager] fileExistsAtPath:marker]) return;
-
-    UIView *root = view;
-    while (root.superview) root = root.superview;
-
-    NSMutableString *dump = [NSMutableString string];
-    [dump appendFormat:@"=== root: %@ frame=%@ ===\n",
-        NSStringFromClass([root class]), NSStringFromCGRect(root.frame)];
-
-    // -recursiveDescription is a private but ever-present UIView method.
-    if ([root respondsToSelector:@selector(recursiveDescription)]) {
-        NSString *recursive = [root performSelector:@selector(recursiveDescription)];
-        [dump appendString:recursive];
-    } else {
-        [dump appendString:@"recursiveDescription unavailable"];
-    }
-
-    [dump writeToFile:@"/var/mobile/legacyui_cc_dump.txt"
-           atomically:YES encoding:NSUTF8StringEncoding error:NULL];
-    [[NSFileManager defaultManager] removeItemAtPath:marker error:NULL];
-    CUICCTrace(@"window hierarchy dumped");
-}
 
 - (void)ensurePanelInView:(UIView *)hostView {
     if (_panelView) return;
-    CGRect screenFrame = [hostView convertRect:[UIScreen mainScreen].bounds fromView:nil];
-    _panelView = [[CUIControlCenterView alloc] initWithFrame:screenFrame];
+    _panelView = [[CUIControlCenterView alloc] initWithFrame:hostView.bounds];
     _panelView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _panelView.hidden = YES;
     _panelView.onOutsideTap = ^{
@@ -205,9 +208,9 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 
 - (void)beginInteractiveOpen {
     if (![self moduleWanted]) return;
-    UIView *host = [self homeScreenHostView];
-    if (!host) return;
-    [self ensurePanelInView:host];
+    UIWindow *window = CUISharedOverlayWindow();
+    if (!window) return;
+    [self ensurePanelInView:window];
     [_panelView prepareForOpen];
 }
 

@@ -218,19 +218,19 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 
     _panelView.wifiItem.onToggle = ^{
         [bridge setWiFiEnabled:![bridge wiFiEnabled]];
-        [self refreshStates];
+        [self scheduleStateReRefresh];
     };
     _panelView.bluetoothItem.onToggle = ^{
         [bridge setBluetoothEnabled:![bridge bluetoothEnabled]];
-        [self refreshStates];
+        [self scheduleStateReRefresh];
     };
     _panelView.dndItem.onToggle = ^{
         [bridge setDoNotDisturbEnabled:![bridge doNotDisturbEnabled]];
-        [self refreshStates];
+        [self scheduleStateReRefresh];
     };
     _panelView.airplaneItem.onToggle = ^{
         [bridge setAirplaneMode:![bridge airplaneMode]];
-        [self refreshStates];
+        [self scheduleStateReRefresh];
     };
 
     _panelView.brightnessSlider.onValueCommit = ^(float value) {
@@ -240,9 +240,9 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         [[CUIVolumeController sharedInstance] updateVolume:value];
     };
 
-    _panelView.musicCard.onPrevious = ^{ [bridge mediaSkip:-1]; [self refreshStates]; };
-    _panelView.musicCard.onNext = ^{ [bridge mediaSkip:1]; [self refreshStates]; };
-    _panelView.musicCard.onPlayPause = ^{ [bridge mediaTogglePlayPause]; [self refreshStates]; };
+    _panelView.musicCard.onPrevious = ^{ [bridge mediaSkip:-1]; [self scheduleStateReRefresh]; };
+    _panelView.musicCard.onNext = ^{ [bridge mediaSkip:1]; [self scheduleStateReRefresh]; };
+    _panelView.musicCard.onPlayPause = ^{ [bridge mediaTogglePlayPause]; [self scheduleStateReRefresh]; };
 
     // Hardware volume buttons while CC is open: live-update our slider.
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -275,6 +275,21 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     _panelView.musicCard.playing = [bridge mediaPlaying];
 }
 
+// Radio state (Bluetooth power, airplane switch-over) and media state apply
+// asynchronously — a single read right after a toggle or exactly at panel
+// open can be stale, which showed up as wrong glow on iOS 6. Re-read shortly
+// after; consecutive identical re-reads are no-ops for the items.
+- (void)scheduleStateReRefresh {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self refreshStates];
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [self refreshStates];
+    });
+}
+
 - (void)beginInteractiveOpen {
     if (![self moduleWanted]) return;
     UIWindow *window = CUISharedOverlayWindow();
@@ -304,6 +319,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     _open = YES;
     g_ccIsOpen = YES;
     [self refreshStates];
+    [self scheduleStateReRefresh]; // async radio/media state convergence
     [_panelView openAnimated:nil];
 }
 

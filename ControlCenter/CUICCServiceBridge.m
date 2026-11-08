@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <unistd.h>
 #import <CoreFoundation/CoreFoundation.h>
 
 static id CUICCSharedInstanceFor(NSString *className, NSString *sharedSelector) {
@@ -53,9 +54,11 @@ static void CUICCDumpIvars(NSMutableString *out, NSString *className) {
     [out appendFormat:@"\n===== ivars of %@ =====\n", className];
     for (unsigned int i = 0; i < count; i++) {
         char *nameBytes = ivar_getName(ivars[i]);
-        [out appendFormat:@"  %@ @%lu\n",
+        char *typeBytes = ivar_getTypeEncoding(ivars[i]);
+        [out appendFormat:@"  %@ @%lu type=%s\n",
             nameBytes ? [NSString stringWithUTF8String:nameBytes] : @"<unnamed>",
-            (unsigned long)ivar_getOffset(ivars[i])];
+            (unsigned long)ivar_getOffset(ivars[i]),
+            typeBytes ? typeBytes : "?"];
     }
     free(ivars);
 }
@@ -94,17 +97,39 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 
     // Where does SpringBoard keep its backlight? Direct ivar probe.
     id sb = [UIApplication sharedApplication];
-    for (NSString *name in @[@"_currentBacklightLevel", @"currentBacklightLevel",
-                             @"_backlightFactor", @"_backlightLevel"]) {
-        Ivar ivar = class_getInstanceVariable([sb class],
-                                              [name UTF8String]);
+    for (NSString *name in @[@"_currentBacklightLevel"]) {
+        Ivar ivar = class_getInstanceVariable([sb class], [name UTF8String]);
         if (!ivar) {
             [out appendFormat:@"  ivar %@ <absent>\n", name];
             continue;
         }
         void *ptr = (void *)((char *)(__bridge void *)sb + ivar_getOffset(ivar));
-        [out appendFormat:@"  ivar %@ @%lu = %.3f\n", name,
-            (unsigned long)ivar_getOffset(ivar), *(float *)ptr];
+        unsigned char *b = ptr;
+        [out appendFormat:@"  ivar %@ @%lu: float=%.4f double=%.4f int=%d i64=%lld  bytes=%02x %02x %02x %02x %02x %02x %02x %02x\n",
+            name,
+            (unsigned long)ivar_getOffset(ivar),
+            *(float *)ptr,
+            *(double *)ptr,
+            *(int32_t *)ptr,
+            (long long)(*(int64_t *)ptr),
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+    }
+
+    // Empirical mapping: push a known factor through the verified setter and
+    // re-read the ivar raw bytes right after.
+    if ([sb respondsToSelector:@selector(setBacklightFactor:)]) {
+        ((void (*)(id, SEL, float))objc_msgSend)(sb, @selector(setBacklightFactor:), 0.30f);
+        usleep(150000); // 150 ms
+        Ivar ivar = class_getInstanceVariable([sb class], "_currentBacklightLevel");
+        if (ivar) {
+            void *ptr = (void *)((char *)(__bridge void *)sb + ivar_getOffset(ivar));
+            unsigned char *b = ptr;
+            [out appendFormat:@"  after setBacklightFactor:0.30 -> float=%.4f double=%.4f int=%d bytes=%02x %02x %02x %02x %02x %02x %02x %02x\n",
+                *(float *)ptr, *(double *)ptr, *(int32_t *)ptr,
+                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]];
+        }
+        // restore
+        ((void (*)(id, SEL, float))objc_msgSend)(sb, @selector(setBacklightFactor:), 0.70f);
     }
 
     CFPropertyListRef dnd = CFPreferencesCopyAppValue(

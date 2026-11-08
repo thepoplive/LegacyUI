@@ -240,6 +240,13 @@ static UIImageView *CUIIOS8ButtonPlate(UIControl *button) {
 // Restyle one button: swap the plate image, keep the glyph ON TOP of the
 // plate (native order is glyph-below-plate — the bug that hid the icons),
 // and drive a soft outer glow through the button layer shadow.
+//
+// CRITICAL: never reorder subviews synchronously here — StyleButton runs
+// inside layoutSubviews, and mutating subview order during a layout pass
+// loops SpringBoard's layout engine into a watchdog kill (safe mode).
+// The reorder is once-per-button and deferred to the next runloop tick.
+static char kIOS8CCOrderKey;
+
 static void CUIIOS8StyleButton(UIControl *button) {
     static Class buttonClass = NULL;
     static dispatch_once_t once;
@@ -249,9 +256,16 @@ static void CUIIOS8StyleButton(UIControl *button) {
     UIImageView *plate = CUIIOS8ButtonPlate(button);
     if (!plate) return;
 
-    // Glyph (and anything else) above the plate.
-    for (UIView *sub in button.subviews) {
-        if (sub != plate) [button bringSubviewToFront:sub];
+    if (!objc_getAssociatedObject(button, &kIOS8CCOrderKey)) {
+        objc_setAssociatedObject(button, &kIOS8CCOrderKey, @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIImageView *plateNow = CUIIOS8ButtonPlate(button);
+            if (!plateNow) return;
+            for (UIView *sub in button.subviews) {
+                if (sub != plateNow) [button bringSubviewToFront:sub];
+            }
+        });
     }
 
     NSUInteger state = 0;
@@ -309,7 +323,13 @@ static void CUIIOS8SpringButton(UIControl *button, CGFloat scale, CGFloat veloci
 }
 
 // An expanding violet disc from the tap point inside the plate — reads as
-// the liquid "filling" from where the finger landed.
+// the liquid "filling" from where the finger landed. Path interpolation
+// (not transform scaling) so the disc truly grows around the tap point.
+static UIBezierPath *CUIIOS8DiscPath(CGPoint origin, CGFloat radius) {
+    return [UIBezierPath bezierPathWithOvalInRect:
+        CGRectMake(origin.x - radius, origin.y - radius, radius * 2, radius * 2)];
+}
+
 static void CUIIOS8RippleFill(UIControl *button) {
     UIImageView *plate = CUIIOS8ButtonPlate(button);
     if (!plate) return;
@@ -319,30 +339,22 @@ static void CUIIOS8RippleFill(UIControl *button) {
         ? [pointValue CGPointValue]
         : CGPointMake(plate.bounds.size.width / 2.0, plate.bounds.size.height / 2.0);
 
-    CGFloat radius = plate.bounds.size.width * 0.12;
-    UIBezierPath *path = [UIBezierPath bezierPathWithOvalInRect:
-        CGRectMake(origin.x - radius, origin.y - radius, radius * 2, radius * 2)];
-
-    CAShapeLayer *ripple = [CAShapeLayer layer];
-    ripple.path = path.CGPath;
-    ripple.fillColor = [IOS8_CC_ACTIVE_B colorWithAlphaComponent:0.92].CGColor;
-    ripple.frame = plate.bounds;
-    [plate.layer addSublayer:ripple];
-
-    // Grow to cover the plate (max distance to a corner), softly.
+    CGFloat startRadius = plate.bounds.size.width * 0.10;
     CGFloat maxDx = MAX(origin.x, plate.bounds.size.width - origin.x);
     CGFloat maxDy = MAX(origin.y, plate.bounds.size.height - origin.y);
-    CGFloat target = sqrtf(maxDx * maxDx + maxDy * maxDy) * 1.15;
-    CGFloat grow = target / radius;
+    CGFloat endRadius = sqrtf(maxDx * maxDx + maxDy * maxDy) * 1.10;
 
-    CABasicAnimation *growAnim = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
-    growAnim.fromValue = @1.0;
-    growAnim.toValue = @(grow);
+    CAShapeLayer *ripple = [CAShapeLayer layer];
+    ripple.path = CUIIOS8DiscPath(origin, endRadius).CGPath; // model value
+    ripple.fillColor = [IOS8_CC_ACTIVE_B colorWithAlphaComponent:0.92].CGColor;
+    [plate.layer addSublayer:ripple];
+
+    CABasicAnimation *growAnim = [CABasicAnimation animationWithKeyPath:@"path"];
+    growAnim.fromValue = (__bridge id)CUIIOS8DiscPath(origin, startRadius).CGPath;
+    growAnim.toValue = (__bridge id)CUIIOS8DiscPath(origin, endRadius).CGPath;
     growAnim.duration = 0.32;
     growAnim.timingFunction = [CAMediaTimingFunction functionWithName:
         kCAMediaTimingFunctionEaseOut];
-    growAnim.fillMode = kCAFillModeForwards;
-    growAnim.removedOnCompletion = NO;
     [ripple addAnimation:growAnim forKey:@"grow"];
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.42 * NSEC_PER_SEC)),
@@ -466,9 +478,13 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     borderMask.path = path.CGPath;
     border.layer.mask = borderMask;
 
-    // Catch-all: freshly created buttons and page scrolls get styled on the
-    // next layout pass.
-    CUIIOS8StyleButtonsInTree(panel);
+    // Catch-all for freshly created buttons — deferred out of the layout
+    // pass: touching subviews/images synchronously in layoutSubviews looped
+    // the layout engine (watchdog kill, safe mode on device).
+    __weak UIView *weakPanel = panel;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CUIIOS8StyleButtonsInTree(weakPanel);
+    });
 }
 
 #pragma mark - Install

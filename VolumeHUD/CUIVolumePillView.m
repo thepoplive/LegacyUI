@@ -1,8 +1,10 @@
 #import "CUIVolumePillView.h"
+#import "../Core/CUIBlurSupport.h"
+#import "../Core/CUICompatibility.h"
 
 @interface CUIVolumePillView ()
 @property (nonatomic, strong) UIView *contentView;
-@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UIView *blurView;
 @property (nonatomic, strong) UIView *tintView;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *subtitleLabel;
@@ -27,12 +29,15 @@
         _contentView.backgroundColor = [UIColor clearColor];
         [self addSubview:_contentView];
 
-        UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:effect];
-        [_contentView addSubview:_blurView];
+        // iOS 8+: real blur; iOS 6/7: nil -> stronger tint.
+        _blurView = CUICreateBlurView(CUIBlurStyleDark);
+        if (_blurView) {
+            [_contentView addSubview:_blurView];
+        }
 
         _tintView = [[UIView alloc] init];
-        _tintView.backgroundColor = [UIColor colorWithWhite:0.10 alpha:0.55];
+        _tintView.backgroundColor = [UIColor colorWithWhite:0.10
+                                                      alpha:_blurView ? 0.55 : 0.75];
         [_contentView addSubview:_tintView];
 
         _titleLabel = [[UILabel alloc] init];
@@ -87,7 +92,7 @@
     CGFloat height = self.bounds.size.height;
 
     _contentView.frame = self.bounds;
-    _blurView.frame = _contentView.bounds;
+    if (_blurView) _blurView.frame = _contentView.bounds;
     _tintView.frame = _contentView.bounds;
     _contentView.layer.cornerRadius = height / 2.0;
 
@@ -154,15 +159,10 @@
 - (void)showWithAnimation {
     if (!_isVisible) {
         _isVisible = YES;
-        [UIView animateWithDuration:0.35
-                              delay:0.0
-             usingSpringWithDamping:0.8
-              initialSpringVelocity:0.6
-                            options:UIViewAnimationOptionCurveEaseOut
-                         animations:^{
+        CUISpringAnimate(0.35, ^{
             self.alpha = 1.0;
             self.transform = CGAffineTransformIdentity;
-        } completion:nil];
+        }, nil);
     }
     [self scheduleDismissTimer];
 }

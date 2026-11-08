@@ -1,9 +1,10 @@
 #import "CUIGlassView.h"
 #import "CUITheme.h"
+#import "CUIBlurSupport.h"
 
 @interface CUIGlassView ()
 @property (nonatomic, strong) UIView *contentView;
-@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UIView *blurView;
 @property (nonatomic, strong) UIView *tintView;
 @property (nonatomic, strong) CAGradientLayer *highlightLayer;
 @end
@@ -23,9 +24,10 @@
         _contentView.layer.masksToBounds = YES;
         [self addSubview:_contentView];
 
-        UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:effect];
-        [_contentView addSubview:_blurView];
+        _blurView = CUICreateBlurView(CUIBlurStyleDark);
+        if (_blurView) {
+            [_contentView addSubview:_blurView];
+        }
 
         _tintView = [[UIView alloc] init];
         _tintView.backgroundColor = [UIColor colorWithWhite:0.09 alpha:_glassOpacity];
@@ -56,7 +58,7 @@
     [super layoutSubviews];
 
     _contentView.frame = self.bounds;
-    _blurView.frame = _contentView.bounds;
+    if (_blurView) _blurView.frame = _contentView.bounds;
     _tintView.frame = _contentView.bounds;
 
     _contentView.layer.cornerRadius = _cornerRadiusValue;

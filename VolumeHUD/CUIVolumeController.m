@@ -1,10 +1,33 @@
 #import "CUIVolumeController.h"
 #import "CUIVolumePillView.h"
 #import "../Core/CUIConfiguration.h"
+#import "../Core/CUICompatibility.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <math.h>
+
+// iOS 6 SpringBoard volume bridge (per legacyui_ios.md):
+//   VolumeControl: +sharedVolumeControl, -getMediaVolume, -setMediaVolume:
+static id LUIIOS6SharedVolumeControl() {
+    Class volumeControlClass = NSClassFromString(@"VolumeControl");
+    if (!volumeControlClass) return nil;
+    if (!class_getInstanceMethod(volumeControlClass, @selector(sharedVolumeControl))) return nil;
+    id shared = [volumeControlClass performSelector:@selector(sharedVolumeControl)];
+    return shared;
+}
+
+static float LUIIOS6GetMediaVolume(id shared) {
+    if (!shared) return -1.0f;
+    if (!class_getInstanceMethod([shared class], @selector(getMediaVolume))) return -1.0f;
+    return ((float (*)(id, SEL))objc_msgSend)(shared, @selector(getMediaVolume));
+}
+
+static void LUIIOS6SetMediaVolume(id shared, float volume) {
+    if (!shared) return;
+    if (!class_getInstanceMethod([shared class], @selector(setMediaVolume:))) return;
+    ((void (*)(id, SEL, float))objc_msgSend)(shared, @selector(setMediaVolume:), volume);
+}
 
 static dispatch_once_t g_hudSwizzleOnce;
 static IMP g_origPresentHUD = NULL;
@@ -133,7 +156,13 @@ static void LUISwizzleHUDController() {
     LUISwizzleHUDController();
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
     if (config.enabled && config.volumeHUDEnabled && config.volumePillEnabled) {
-        [self installVolumeObserverIfNeeded];
+        // iOS 6 reads volume through VolumeControl; iOS 8 uses the MPVolumeView slider.
+        if (!CUIIsiOS6OrEarlier()) {
+            [self installVolumeObserverIfNeeded];
+        } else {
+            float volume = LUIIOS6GetMediaVolume(LUIIOS6SharedVolumeControl());
+            if (volume >= 0.0f) _currentVolume = volume;
+        }
     }
 }
 
@@ -226,7 +255,18 @@ static void LUISwizzleHUDController() {
     [_pill showWithAnimation];
 }
 
+- (float)readSystemVolume {
+    if (CUIIsiOS6OrEarlier()) {
+        float volume = LUIIOS6GetMediaVolume(LUIIOS6SharedVolumeControl());
+        if (volume >= 0.0f) return volume;
+        return _currentVolume;
+    }
+    if (_systemVolumeSlider) return _systemVolumeSlider.value;
+    return _currentVolume;
+}
+
 - (void)showVolumePill {
+    _currentVolume = [self readSystemVolume];
     [self presentPill:^(CUIVolumePillView *pill) {
         [pill configureAsVolume];
         pill.volumeLevel = _currentVolume;
@@ -247,7 +287,10 @@ static void LUISwizzleHUDController() {
 - (void)setSystemVolume:(float)volume {
     if (fabsf(volume - _currentVolume) < 0.001) return;
     _currentVolume = volume;
-    if (_systemVolumeSlider) {
+
+    if (CUIIsiOS6OrEarlier()) {
+        LUIIOS6SetMediaVolume(LUIIOS6SharedVolumeControl(), volume);
+    } else if (_systemVolumeSlider) {
         _systemVolumeSlider.value = volume;
     }
 }

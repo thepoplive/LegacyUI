@@ -1,15 +1,16 @@
 #!/bin/bash
 # LegacyUI build script — no Theos, plain clang + ldid + dpkg-deb.
 #
-# Toolchain notes (iOS 8.0+ / ARMv7):
+# Toolchain notes (iOS 6.0–8.4.1 / ARMv7):
 #  - Compile and link against iPhoneOS10.3.sdk (last SDK with armv7 stubs).
-#  - Deployment target 8.0 so the dylib loads on every iOS 8.x release.
+#  - Deployment target 6.0: one binary for iPhone 3GS (iOS 6) and 8.x devices;
+#    iOS 8-only APIs are guarded with runtime class checks.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TWEAK_NAME="LegacyUI"
 ARCH="armv7"
-MIN_OS="8.0"
+MIN_OS="6.0"
 LEGACY_SDK="$ROOT/third_party/theos-sdks/iPhoneOS10.3.sdk"
 BUILD="$ROOT/build"
 OBJ="$BUILD/obj"

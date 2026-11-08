@@ -1,8 +1,9 @@
 #import "CUIDockView.h"
+#import "../Core/CUIBlurSupport.h"
 
 @interface CUIDockView ()
 @property (nonatomic, strong) UIView *contentView;
-@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UIView *blurView;
 @property (nonatomic, strong) UIView *tintView;
 @property (nonatomic, strong) CAGradientLayer *highlightLayer;
 @end
@@ -19,12 +20,16 @@
         _contentView.backgroundColor = [UIColor clearColor];
         [self addSubview:_contentView];
 
-        UIBlurEffect *effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleLight];
-        _blurView = [[UIVisualEffectView alloc] initWithEffect:effect];
-        [_contentView addSubview:_blurView];
+        // iOS 8+: real blur. iOS 6/7: nil -> opaque tint below.
+        _blurView = CUICreateBlurView(CUIBlurStyleLight);
+        if (_blurView) {
+            [_contentView addSubview:_blurView];
+        }
 
         _tintView = [[UIView alloc] init];
-        _tintView.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.52];
+        // Without blur the tint must carry the glass look alone.
+        _tintView.backgroundColor = [UIColor colorWithWhite:1.0
+                                                      alpha:_blurView ? 0.52 : 0.78];
         [_contentView addSubview:_tintView];
 
         _highlightLayer = [CAGradientLayer layer];
@@ -52,7 +57,7 @@
     [super layoutSubviews];
 
     _contentView.frame = self.bounds;
-    _blurView.frame = _contentView.bounds;
+    if (_blurView) _blurView.frame = _contentView.bounds;
     _tintView.frame = _contentView.bounds;
 
     CGFloat radius = MIN(self.bounds.size.height / 2.0, 28.0);

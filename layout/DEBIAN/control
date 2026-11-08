@@ -1,8 +1,8 @@
 Package: com.legacyui.tweak
 Name: LegacyUI
-Version: 0.1.2
+Version: 0.2.0
 Architecture: iphoneos-arm
-Description: Liquid Glass inspired system interface redesign for iOS 8
+Description: Liquid Glass inspired system interface redesign for iOS 6-8
 Maintainer: LegacyUI Developer
 Section: Tweaks
-Depends: mobilesubstrate, preferenceloader (>= 2.0), firmware (>= 8.0)
+Depends: mobilesubstrate, preferenceloader (>= 2.0), firmware (>= 6.0)

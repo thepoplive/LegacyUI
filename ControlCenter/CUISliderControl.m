@@ -105,6 +105,14 @@
     [self updateWithTouch:[touches anyObject]];
 }
 
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (self.onValueCommit) self.onValueCommit(_value);
+}
+
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+    if (self.onValueCommit) self.onValueCommit(_value);
+}
+
 - (void)updateWithTouch:(UITouch *)touch {
     CGPoint point = [touch locationInView:self];
     CGFloat top = [self minYForThumb];

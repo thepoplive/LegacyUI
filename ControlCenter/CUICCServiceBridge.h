@@ -1,0 +1,43 @@
+#import <Foundation/Foundation.h>
+
+// Service bridge for the Control Center (iOS 6 first, iOS 8 where possible).
+// All private classes are resolved at runtime; every selector is checked
+// against the verified iOS 6.1 / 8.0 class-dump headers.
+
+@interface CUICCServiceBridge : NSObject
+
++ (instancetype)sharedBridge;
+
+// One-shot runtime verification: /var/mobile/.legacyui_probe marker ->
+// dumps real method lists of the service classes to
+// /var/mobile/legacyui_probe.txt (ground truth from the actual binary).
++ (void)probeClassesIfNeeded;
+
+#pragma mark Radios
+
+- (BOOL)bluetoothEnabled;
+- (void)setBluetoothEnabled:(BOOL)enabled;
+
+- (BOOL)airplaneMode;
+- (void)setAirplaneMode:(BOOL)enabled;
+
+- (BOOL)wiFiEnabled;          // pending probe-driven wiring
+- (void)setWiFiEnabled:(BOOL)enabled;
+
+- (BOOL)doNotDisturbEnabled;
+- (void)setDoNotDisturbEnabled:(BOOL)enabled;
+
+#pragma mark Brightness (verified: SpringBoard setBacklightFactor:, ivar _currentBacklightLevel)
+
+- (float)brightness;
+- (void)setBrightness:(float)level;
+
+#pragma mark Media (verified: SBMediaController)
+
+- (NSString *)mediaTitle;
+- (NSString *)mediaArtist;
+- (BOOL)mediaPlaying;
+- (void)mediaTogglePlayPause;
+- (void)mediaSkip:(int)direction; // -1 previous, +1 next
+
+@end

@@ -33,39 +33,44 @@ static UIImage *CUICCImageForIcon(CUICCIcon icon, CGSize size, UIColor *color) {
         }
         case CUICCIconBluetooth: {
             return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
-                CGFloat x = r.size.width * 0.52;
-                CGFloat yTop = r.size.height * 0.12, yMid = r.size.height * 0.5, yBot = r.size.height * 0.88;
-                CGFloat xL = r.size.width * 0.24, xR = r.size.width * 0.76;
-                CGContextMoveToPoint(ctx, xL, yMid);
-                CGContextAddLineToPoint(ctx, x, yTop);
-                CGContextAddLineToPoint(ctx, xL, yBot);
-                CGContextAddLineToPoint(ctx, xR, yTop);
-                CGContextAddLineToPoint(ctx, x, yMid);
-                CGContextAddLineToPoint(ctx, xR, yBot);
+                CGFloat w = r.size.width;
+                CGFloat h = r.size.height;
+                CGContextSetLineWidth(ctx, w * 0.13);
+                CGFloat xMid = w * 0.55;
+                CGFloat xL = w * 0.26, xR = w * 0.80;
+                CGFloat yTop = h * 0.10, yMid = h * 0.50, yBot = h * 0.90;
+                // Center spine.
+                CGContextMoveToPoint(ctx, xMid, yTop + h * 0.06);
+                CGContextAddLineToPoint(ctx, xMid, yBot - h * 0.06);
+                CGContextStrokePath(ctx);
+                // Left chevron through the spine.
+                CGContextMoveToPoint(ctx, xR, yTop);
                 CGContextAddLineToPoint(ctx, xL, yMid);
+                CGContextAddLineToPoint(ctx, xR, yBot);
                 CGContextStrokePath(ctx);
             });
         }
         case CUICCIconAirplane: {
             return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
-                CGFloat cx = r.size.width / 2, cy = r.size.height / 2;
+                // Paper dart: one bold triangle + fold notch.
+                CGFloat cx = r.size.width / 2;
+                CGFloat w = r.size.width, h = r.size.height;
                 UIBezierPath *p = [UIBezierPath bezierPath];
-                [p moveToPoint:CGPointMake(cx, r.size.height * 0.08)];
-                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, r.size.height * 0.40)];
-                [p addLineToPoint:CGPointMake(r.size.width * 0.96, cy + r.size.height * 0.02)];
-                [p addLineToPoint:CGPointMake(r.size.width * 0.96, cy + r.size.height * 0.16)];
-                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, cy + r.size.height * 0.26)];
-                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, r.size.height * 0.86)];
-                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.30, r.size.height * 0.96)];
-                [p addLineToPoint:CGPointMake(cx, r.size.height * 0.84)];
-                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.30, r.size.height * 0.96)];
-                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, r.size.height * 0.86)];
-                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, cy + r.size.height * 0.26)];
-                [p addLineToPoint:CGPointMake(r.size.width * 0.04, cy + r.size.height * 0.16)];
-                [p addLineToPoint:CGPointMake(r.size.width * 0.04, cy + r.size.height * 0.02)];
-                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, r.size.height * 0.40)];
+                [p moveToPoint:CGPointMake(w * 0.92, h * 0.10)];
+                [p addLineToPoint:CGPointMake(w * 0.06, h * 0.46)];
+                [p addLineToPoint:CGPointMake(w * 0.42, h * 0.54)];
+                [p addLineToPoint:CGPointMake(w * 0.52, h * 0.92)];
+                [p addLineToPoint:CGPointMake(w * 0.62, h * 0.54)];
+                [p addLineToPoint:CGPointMake(w * 0.94, h * 0.50)];
                 [p closePath];
                 [p fill];
+                // Fold line.
+                CGContextSetBlendMode(ctx, kCGBlendModeDestinationOut);
+                CGContextSetLineWidth(ctx, w * 0.05);
+                CGContextMoveToPoint(ctx, cx, h * 0.16);
+                CGContextAddLineToPoint(ctx, w * 0.46, h * 0.52);
+                CGContextStrokePath(ctx);
+                CGContextSetBlendMode(ctx, kCGBlendModeNormal);
             });
         }
         case CUICCIconMoon: {

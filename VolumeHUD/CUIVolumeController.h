@@ -10,6 +10,7 @@
 - (void)showMutePillSilent:(BOOL)silent;
 - (void)presentVolumeProgress:(float)progress;
 - (void)hideVolumePill;
-- (void)updateVolume:(float)volume;
+- (void)updateVolume:(float)volume;  // Control Center slider commit
+- (float)readSystemVolume;
 
 @end

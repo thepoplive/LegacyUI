@@ -3,6 +3,7 @@
 #import "../Core/CUIConfiguration.h"
 #import "../Core/CUICompatibility.h"
 #import "../Core/CUIOverlayWindow.h"
+#import "../Core/CUIGlobalState.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -253,6 +254,7 @@ static void LUISwizzleHUDController() {
 - (void)systemVolumeChanged:(UISlider *)sender {
     if (!LUIVolumeWanted()) return;
     _currentVolume = sender.value;
+    if (LUIVolumePillSuppressedByCC(_currentVolume)) return;
     [self presentPill:^(CUIVolumePillView *pill) {
         [pill configureAsVolume];
         pill.volumeLevel = _currentVolume;
@@ -263,6 +265,19 @@ static void LUISwizzleHUDController() {
     CGRect bounds = [UIScreen mainScreen].bounds;
     CGFloat width = MIN(bounds.size.width - 40.0, 200.0);
     return CGRectMake((bounds.size.width - width) / 2.0, 22.0, width, 54.0);
+}
+
+// While the Control Center is open the hardware volume buttons must not pop
+// up the pill — the CC volume slider follows them instead (the CC controller
+// listens for CUICCVolumeChangedNotification and refreshes its slider).
+// Volume paths only — the ringer/mute pill still shows while CC is open.
+static BOOL LUIVolumePillSuppressedByCC(float volume) {
+    if (!g_ccIsOpen) return NO;
+    [[NSNotificationCenter defaultCenter]
+         postNotificationName:CUICCVolumeChangedNotification
+                       object:nil
+                     userInfo:@{@"value": @(volume)}];
+    return YES;
 }
 
 - (void)presentPill:(void (^)(CUIVolumePillView *pill))configure {
@@ -304,6 +319,7 @@ static void LUISwizzleHUDController() {
 
 - (void)showVolumePill {
     _currentVolume = [self readSystemVolume];
+    if (LUIVolumePillSuppressedByCC(_currentVolume)) return;
     [self presentPill:^(CUIVolumePillView *pill) {
         [pill configureAsVolume];
         pill.volumeLevel = _currentVolume;
@@ -313,6 +329,7 @@ static void LUISwizzleHUDController() {
 - (void)presentVolumeProgress:(float)progress {
     if (progress < 0.0f || progress > 1.0f) return;
     _currentVolume = progress;
+    if (LUIVolumePillSuppressedByCC(_currentVolume)) return;
     [self presentPill:^(CUIVolumePillView *pill) {
         [pill configureAsVolume];
         pill.volumeLevel = progress;
@@ -341,9 +358,18 @@ static void LUISwizzleHUDController() {
     }
 }
 
+// Control Center volume slider (commit on release): route through the real
+// setter so the change reaches the system (VolumeControl on iOS 6, the hidden
+// MPVolumeView slider on iOS 8).
 - (void)updateVolume:(float)volume {
-    _currentVolume = volume;
-    _pill.volumeLevel = volume;
+    if (CUIIsiOS6OrEarlier()) {
+        // The MPVolumeView observer below is iOS-8-only; iOS 6 goes straight
+        // to VolumeControl -setMediaVolume:.
+    } else if (!_systemVolumeSlider) {
+        [self installVolumeObserverIfNeeded];
+    }
+    [self setSystemVolume:volume]; // sets _currentVolume and pushes to system
+    if (_pill) _pill.volumeLevel = _currentVolume; // CC is overriding the pill value
 }
 
 @end

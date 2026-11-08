@@ -7,7 +7,8 @@ typedef void (^CUICCSliderBlock)(float value);
 @interface CUISliderControl : UIView
 
 @property (nonatomic, assign) float value; // 0..1
-@property (nonatomic, copy) CUICCSliderBlock onValueChange;
+@property (nonatomic, copy) CUICCSliderBlock onValueChange;   // live drag
+@property (nonatomic, copy) CUICCSliderBlock onValueCommit;   // finger released
 
 - (instancetype)initWithIcon:(CUICCIcon)icon;
 

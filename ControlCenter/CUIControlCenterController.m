@@ -1,9 +1,15 @@
 #import "CUIControlCenterController.h"
 #import "CUIControlCenterView.h"
 #import "CUIControlCenterGrabber.h"
+#import "CUICCServiceBridge.h"
+#import "CUISliderControl.h"
+#import "CUIMusicCard.h"
+#import "CUIControlCenterItem.h"
 #import "../Core/CUIConfiguration.h"
 #import "../Core/CUICompatibility.h"
 #import "../Core/CUIOverlayWindow.h"
+#import "../Core/CUIGlobalState.h"
+#import "../VolumeHUD/CUIVolumeController.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -115,6 +121,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         return;
     }
     CUICCTrace(@"activate");
+    [CUICCServiceBridge probeClassesIfNeeded];
     CUICCSwizzleMenuButton();
     CUICCSwizzleFrontDisplay();
     [self installGrabber];
@@ -191,7 +198,6 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     return _open;
 }
 
-
 - (void)ensurePanelInView:(UIView *)hostView {
     if (_panelView) return;
     _panelView = [[CUIControlCenterView alloc] initWithFrame:hostView.bounds];
@@ -201,9 +207,72 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         [self closeControlCenter];
     };
     _panelView.onGearTap = ^{
-        [self openSettings];
+        [self closeAndOpenSettings];
     };
+    [self wireControls];
     [hostView addSubview:_panelView];
+}
+
+- (void)wireControls {
+    CUICCServiceBridge *bridge = [CUICCServiceBridge sharedBridge];
+
+    _panelView.wifiItem.onToggle = ^{
+        [bridge setWiFiEnabled:![bridge wiFiEnabled]];
+        [self refreshStates];
+    };
+    _panelView.bluetoothItem.onToggle = ^{
+        [bridge setBluetoothEnabled:![bridge bluetoothEnabled]];
+        [self refreshStates];
+    };
+    _panelView.dndItem.onToggle = ^{
+        [bridge setDoNotDisturbEnabled:![bridge doNotDisturbEnabled]];
+        [self refreshStates];
+    };
+    _panelView.airplaneItem.onToggle = ^{
+        [bridge setAirplaneMode:![bridge airplaneMode]];
+        [self refreshStates];
+    };
+
+    _panelView.brightnessSlider.onValueCommit = ^(float value) {
+        [bridge setBrightness:value];
+    };
+    _panelView.volumeSlider.onValueCommit = ^(float value) {
+        [[CUIVolumeController sharedInstance] updateVolume:value];
+    };
+
+    _panelView.musicCard.onPrevious = ^{ [bridge mediaSkip:-1]; [self refreshStates]; };
+    _panelView.musicCard.onNext = ^{ [bridge mediaSkip:1]; [self refreshStates]; };
+    _panelView.musicCard.onPlayPause = ^{ [bridge mediaTogglePlayPause]; [self refreshStates]; };
+
+    // Hardware volume buttons while CC is open: live-update our slider.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(ccVolumeChanged:)
+                                                 name:CUICCVolumeChangedNotification
+                                               object:nil];
+}
+
+- (void)ccVolumeChanged:(NSNotification *)note {
+    if (!_open) return;
+    NSNumber *value = note.userInfo[@"value"];
+    if ([value isKindOfClass:[NSNumber class]]) {
+        _panelView.volumeSlider.value = [value floatValue];
+    }
+}
+
+- (void)refreshStates {
+    if (!_panelView) return;
+    CUICCServiceBridge *bridge = [CUICCServiceBridge sharedBridge];
+
+    [_panelView.bluetoothItem setActive:[bridge bluetoothEnabled] animated:NO];
+    [_panelView.dndItem setActive:[bridge doNotDisturbEnabled] animated:NO];
+    [_panelView.airplaneItem setActive:[bridge airplaneMode] animated:NO];
+
+    _panelView.volumeSlider.value = [[CUIVolumeController sharedInstance] readSystemVolume];
+    _panelView.brightnessSlider.value = [bridge brightness];
+
+    _panelView.mediaTitle = [bridge mediaTitle];
+    _panelView.mediaArtist = [bridge mediaArtist];
+    _panelView.musicCard.playing = [bridge mediaPlaying];
 }
 
 - (void)beginInteractiveOpen {
@@ -211,6 +280,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     UIWindow *window = CUISharedOverlayWindow();
     if (!window) return;
     [self ensurePanelInView:window];
+    [self refreshStates];
     [_panelView prepareForOpen];
 }
 
@@ -230,14 +300,30 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 }
 
 - (void)openControlCenter {
+    if (_open) return;
     _open = YES;
+    g_ccIsOpen = YES;
+    [self refreshStates];
     [_panelView openAnimated:nil];
 }
 
 - (void)closeControlCenter {
     if (!_open && (_panelView == nil || _panelView.hidden)) return;
     _open = NO;
+    g_ccIsOpen = NO;
     [_panelView closeAnimated:nil];
+}
+
+- (void)closeAndOpenSettings {
+    BOOL wasOpen = _open;
+    [self closeControlCenter];
+    if (wasOpen) {
+        [self performSelector:@selector(openSettings)
+                   withObject:nil
+                   afterDelay:0.45];
+    } else {
+        [self openSettings];
+    }
 }
 
 - (void)openSettings {

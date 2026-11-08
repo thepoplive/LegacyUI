@@ -181,7 +181,7 @@
             <key>cell</key>
             <string>PSStaticTextCell</string>
             <key>label</key>
-            <string>LegacyUI 0.2.0</string>
+            <string>LegacyUI 0.3.0</string>
             <key>detail</key>
             <string>Liquid Glass redesign for iOS 6.0–8.4.1</string>
         </dict>

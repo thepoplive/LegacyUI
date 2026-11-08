@@ -12,6 +12,15 @@
 static dispatch_once_t g_ccSwizzleOnce;
 static IMP g_origMenuButtonDown = NULL;
 
+static void CUICCTrace(NSString *line) {
+    NSString *path = @"/var/mobile/legacyui_cc_trace.txt";
+    NSMutableString *content = [NSMutableString stringWithContentsOfFile:path
+                                                              usedEncoding:NULL error:NULL];
+    if (!content) content = [NSMutableString string];
+    [content appendFormat:@"[%@] %@\n", [NSDate date], line];
+    [content writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+}
+
 static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event);
 
 static void CUICCSwizzleMenuButton() {
@@ -68,7 +77,11 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 }
 
 - (void)activate {
-    if (![self moduleWanted]) return;
+    if (![self moduleWanted]) {
+        CUICCTrace(@"activate: module disabled");
+        return;
+    }
+    CUICCTrace(@"activate");
     CUICCSwizzleMenuButton();
     [self installGrabber];
 }
@@ -84,12 +97,15 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 
     UIView *hostView = [self homeScreenHostView];
     if (!hostView) {
+        CUICCTrace(@"installGrabber: host nil, retrying");
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             [self activate];
         });
         return;
     }
+    CUICCTrace([NSString stringWithFormat:@"installGrabber: host=%@ bounds=%@",
+                NSStringFromClass([hostView class]), NSStringFromCGRect(hostView.bounds)]);
 
     _grabber = [CUIControlCenterGrabber attachToView:hostView];
     _grabber.triggerHeight = 300.0;
@@ -110,15 +126,32 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 // to its superview when possible (guaranteed top of the home screen stack).
 - (UIView *)homeScreenHostView {
     Class controllerClass = NSClassFromString(@"SBIconController");
-    if (!controllerClass) return nil;
-    if (!class_getInstanceMethod(controllerClass, @selector(sharedInstance))) return nil;
+    if (!controllerClass) {
+        CUICCTrace(@"host: SBIconController class nil");
+        return nil;
+    }
+    if (!class_getInstanceMethod(controllerClass, @selector(sharedInstance))) {
+        CUICCTrace(@"host: sharedInstance missing");
+        return nil;
+    }
     id shared = [controllerClass performSelector:@selector(sharedInstance)];
-    if (!shared) return nil;
-    if (![shared respondsToSelector:@selector(contentView)]) return nil;
+    if (!shared) {
+        CUICCTrace(@"host: sharedInstance nil");
+        return nil;
+    }
+    if (![shared respondsToSelector:@selector(contentView)]) {
+        CUICCTrace(@"host: contentView missing");
+        return nil;
+    }
     UIView *contentView = [shared performSelector:@selector(contentView)];
-    if (![contentView isKindOfClass:[UIView class]]) return nil;
+    if (![contentView isKindOfClass:[UIView class]]) {
+        CUICCTrace(@"host: contentView not a view");
+        return nil;
+    }
 
-    if (contentView.superview) return contentView.superview;
+    if (contentView.superview) {
+        return contentView.superview;
+    }
     return contentView;
 }
 

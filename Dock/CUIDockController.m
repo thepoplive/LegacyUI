@@ -107,8 +107,11 @@ static void LUIDockClearDrawableLayers(UIView *view) {
     view.backgroundColor = [UIColor clearColor];
 }
 
-// Union of the actual icon frames inside the dock icon list (container coords).
-static CGRect LUIIOS6IconUnionFrame(UIView *iconList) {
+// Union of the actual icon frames inside the dock icon list (host coords).
+// Shared by both paths: works on iOS 6 (SBDockIconListView -> SBIconView)
+// and iOS 8 (SBDockIconListView -> SBIconView) — the "IconView" class-name
+// match holds on both firmwares.
+static CGRect LUIDockIconUnionFrame(UIView *iconList) {
     CGRect unionRect = CGRectNull;
     for (UIView *sub in iconList.subviews) {
         if ([NSStringFromClass([sub class]) rangeOfString:@"IconView"].location == NSNotFound) {
@@ -195,11 +198,50 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
             UIView *view = LUIDockIvarView(hostView, ivarName);
             if (view) view.hidden = YES;
         }
-        if (iconList && iconList.superview == hostView) {
-            iconList.center = CGPointMake(hostView.bounds.size.width / 2.0,
-                                          hostView.bounds.size.height / 2.0);
+
+        // Preferred icon list: verified -dockListView accessor (iOS 8.0
+        // SBDockView.h), hierarchy search as a fallback.
+        UIView *iconList8 = nil;
+        if ([hostView respondsToSelector:@selector(dockListView)]) {
+            id list = [hostView performSelector:@selector(dockListView)];
+            if ([list isKindOfClass:[UIView class]]) iconList8 = list;
         }
-        glassFrame = CGRectInset(hostView.bounds, 5, 3);
+        if (!iconList8) iconList8 = iconList;
+
+        if (iconList8 && iconList8.superview == hostView) {
+            // Center the icon graphics (label zone trimmed) in the dock.
+            CGRect unionRect = LUIDockIconUnionFrame(iconList8);
+            if (!CGRectIsNull(unionRect)) {
+                CGFloat labelTrim = MIN(18.0, unionRect.size.height * 0.28);
+                unionRect.size.height -= labelTrim;
+                CGFloat targetY = hostView.bounds.size.height / 2.0;
+                CGFloat offset = targetY - (unionRect.origin.y + unionRect.size.height / 2.0);
+                iconList8.center = CGPointMake(iconList8.center.x,
+                                                iconList8.center.y + offset);
+            } else {
+                iconList8.center = CGPointMake(hostView.bounds.size.width / 2.0,
+                                               hostView.bounds.size.height / 2.0);
+            }
+        }
+
+        // Glass hugs the icon graphics exactly like the iOS 6 (3GS) layout:
+        // union frame with the label zone trimmed, small padding, clamped.
+        CGRect unionRect = iconList8 ? LUIDockIconUnionFrame(iconList8) : CGRectNull;
+        if (!CGRectIsNull(unionRect)) {
+            CGFloat labelTrim = MIN(18.0, unionRect.size.height * 0.28);
+            unionRect.size.height -= labelTrim;
+            CGFloat padX = 8.0, padY = 6.0;
+            glassFrame = CGRectMake(unionRect.origin.x - padX,
+                                     unionRect.origin.y - padY,
+                                     unionRect.size.width + padX * 2.0,
+                                     unionRect.size.height + padY * 2.0);
+            CGRect dockBounds = CGRectInset(hostView.bounds, 1.0, 1.0);
+            CGRect clamped = CGRectIntersection(glassFrame, dockBounds);
+            if (!CGRectIsEmpty(clamped)) glassFrame = clamped;
+        } else {
+            // Legacy fallback (pre-union layout): dock bounds minus a small inset.
+            glassFrame = CGRectInset(hostView.bounds, 5, 3);
+        }
     } else {
         // iOS 6 path: the container is dedicated to the dock — hide everything
         // that is not the icon list and not our glass, and clear the native
@@ -223,7 +265,7 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         LUIIOS6SetNativeDockBarHidden(hostView, YES);
 
         if (iconList) {
-            CGRect unionRect = LUIIOS6IconUnionFrame(iconList);
+            CGRect unionRect = LUIDockIconUnionFrame(iconList);
             if (!CGRectIsNull(unionRect)) {
                 // SBIconView frames include the (hidden) label zone at the
                 // bottom — trim it so the glass hugs the icon graphics only.

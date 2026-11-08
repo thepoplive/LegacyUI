@@ -2,6 +2,7 @@
 #import "CUIControlCenterView.h"
 #import "CUIControlCenterGrabber.h"
 #import "CUICCServiceBridge.h"
+#import "CUIIOS8ControlCenterTheme.h"
 #import "CUISliderControl.h"
 #import "CUIMusicCard.h"
 #import "CUIControlCenterItem.h"
@@ -119,6 +120,14 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 - (void)activate {
     if (![self moduleWanted]) {
         CUICCTrace(@"activate: module disabled");
+        return;
+    }
+    if (!CUIIsiOS6OrEarlier()) {
+        // iOS 7/8: restyle the native Control Center (glass panel, violet
+        // active toggles) instead of running the custom overlay panel — all
+        // native controls keep working with the real system APIs.
+        CUIIOS8InstallControlCenterTheme();
+        CUICCTrace(@"activate: native CC theme (iOS 8)");
         return;
     }
     CUICCTrace(@"activate");

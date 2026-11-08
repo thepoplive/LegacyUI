@@ -266,10 +266,10 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     [_panelView.bluetoothItem setActive:[bridge bluetoothEnabled] animated:NO];
     [_panelView.dndItem setActive:[bridge doNotDisturbEnabled] animated:NO];
     [_panelView.airplaneItem setActive:[bridge airplaneMode] animated:NO];
-    // Radio state drives the Wi-Fi glow: SBWiFiManager -wiFiEnabled tracks the
-    // Settings switch and lags/ignores programmatic toggles (probe), while
-    // -isPowered reflects actual radio power.
-    [_panelView.wifiItem setActive:[bridge wiFiPowered] animated:NO];
+    // Probe verdict: SBWiFiManager -wiFiEnabled moves instantly on
+    // programmatic toggles; -isPowered lags 4+ seconds. Glow from the switch
+    // state, converging with the re-refresh ladder if needed.
+    [_panelView.wifiItem setActive:[bridge wiFiEnabled] animated:NO];
 
     _panelView.volumeSlider.value = [[CUIVolumeController sharedInstance] readSystemVolume];
     _panelView.brightnessSlider.value = [bridge brightness];

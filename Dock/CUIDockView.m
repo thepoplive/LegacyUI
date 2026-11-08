@@ -29,12 +29,12 @@
         _tintView = [[UIView alloc] init];
         // Without blur the tint must carry the glass look alone.
         _tintView.backgroundColor = [UIColor colorWithWhite:1.0
-                                                      alpha:_blurView ? 0.52 : 0.78];
+                                                      alpha:_blurView ? 0.52 : 0.42];
         [_contentView addSubview:_tintView];
 
         _highlightLayer = [CAGradientLayer layer];
         _highlightLayer.colors = @[
-            (id)[UIColor colorWithWhite:1.0 alpha:0.55].CGColor,
+            (id)[UIColor colorWithWhite:1.0 alpha:0.50].CGColor,
             (id)[UIColor colorWithWhite:1.0 alpha:0.05].CGColor
         ];
         _highlightLayer.locations = @[@0.0, @0.5];
@@ -42,13 +42,13 @@
         _highlightLayer.endPoint = CGPointMake(0.5, 1.0);
         [_contentView.layer addSublayer:_highlightLayer];
 
-        _contentView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.65].CGColor;
+        _contentView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.55].CGColor;
         _contentView.layer.borderWidth = 1.0;
 
         self.layer.shadowColor = [UIColor blackColor].CGColor;
-        self.layer.shadowOpacity = 0.28;
-        self.layer.shadowOffset = CGSizeMake(0, 5);
-        self.layer.shadowRadius = 9.0;
+        self.layer.shadowOpacity = 0.22;
+        self.layer.shadowOffset = CGSizeMake(0, 4);
+        self.layer.shadowRadius = 7.0;
     }
     return self;
 }
@@ -60,8 +60,8 @@
     if (_blurView) _blurView.frame = _contentView.bounds;
     _tintView.frame = _contentView.bounds;
 
-    CGFloat radius = _capsuleShape ? self.bounds.size.height / 2.0
-                                   : MIN(self.bounds.size.height / 2.0, 28.0);
+    // Classic dock radius: gentle rounding, no pill shape.
+    CGFloat radius = MIN(self.bounds.size.height / 2.0, 12.0);
     _contentView.layer.cornerRadius = radius;
     _highlightLayer.frame = CGRectMake(0, 0, _contentView.bounds.size.width,
                                        _contentView.bounds.size.height * 0.5);

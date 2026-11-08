@@ -169,8 +169,23 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         if (iconList) {
             CGRect unionRect = LUIIOS6IconUnionFrame(iconList);
             if (!CGRectIsNull(unionRect)) {
-                // Tight capsule around the icons themselves.
-                glassFrame = CGRectInset(unionRect, -10, -7);
+                // SBIconView frames include the (hidden) label zone at the
+                // bottom — trim it so the glass hugs the icon graphics only.
+                CGFloat labelTrim = MIN(16.0, unionRect.size.height * 0.25);
+                unionRect.size.height -= labelTrim;
+
+                // Classic dock: thin glass tightly around the icon area,
+                // slightly raised from the bottom edge of the dock.
+                CGFloat padX = 8.0, padY = 6.0;
+                glassFrame = CGRectMake(unionRect.origin.x - padX,
+                                         unionRect.origin.y - padY,
+                                         unionRect.size.width + padX * 2.0,
+                                         unionRect.size.height + padY * 2.0);
+
+                // Never exceed the native dock container bounds.
+                CGRect dockBounds = CGRectInset(hostView.bounds, 2.0, 0.0);
+                CGRect clamped = CGRectIntersection(glassFrame, dockBounds);
+                if (!CGRectIsEmpty(clamped)) glassFrame = clamped;
             } else {
                 glassFrame = CGRectInset(iconList.frame, -6, -6);
             }
@@ -183,7 +198,6 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
 
     if (!glass) {
         glass = [[CUIDockView alloc] initWithFrame:glassFrame];
-        glass.capsuleShape = !hideIvarBackgrounds;
 
         if (iconList) {
             [hostView insertSubview:glass belowSubview:iconList];

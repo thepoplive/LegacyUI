@@ -1,0 +1,203 @@
+#import "CUICCIconDrawing.h"
+#import <math.h>
+
+#define RAD(d) ((d) * M_PI / 180.0)
+
+static UIImage *CUICCRender(CGSize size, UIColor *color, void (^draw)(CGContextRef ctx, CGRect rect)) {
+    if (size.width < 1 || size.height < 1) return nil;
+    UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    [color setStroke];
+    [color setFill];
+    CGContextSetLineWidth(ctx, size.width * 0.08);
+    CGContextSetLineCap(ctx, kCGLineCapRound);
+    draw(ctx, CGRectMake(0, 0, size.width, size.height));
+    UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return image;
+}
+
+static UIImage *CUICCImageForIcon(CUICCIcon icon, CGSize size, UIColor *color) {
+    switch (icon) {
+        case CUICCIconWiFi: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGPoint c = CGPointMake(r.size.width / 2, r.size.height * 0.78);
+                CGFloat radius[3] = {r.size.width * 0.42, r.size.width * 0.28, r.size.width * 0.14};
+                for (int i = 0; i < 3; i++) {
+                    CGContextAddArc(ctx, c.x, c.y, radius[i], RAD(215), RAD(325), 0);
+                    CGContextStrokePath(ctx);
+                }
+                CGFloat dot = r.size.width * 0.055;
+                CGContextFillEllipseInRect(ctx, CGRectMake(c.x - dot, c.y - dot, dot * 2, dot * 2));
+            });
+        }
+        case CUICCIconBluetooth: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat x = r.size.width * 0.52;
+                CGFloat yTop = r.size.height * 0.12, yMid = r.size.height * 0.5, yBot = r.size.height * 0.88;
+                CGFloat xL = r.size.width * 0.24, xR = r.size.width * 0.76;
+                CGContextMoveToPoint(ctx, xL, yMid);
+                CGContextAddLineToPoint(ctx, x, yTop);
+                CGContextAddLineToPoint(ctx, xL, yBot);
+                CGContextAddLineToPoint(ctx, xR, yTop);
+                CGContextAddLineToPoint(ctx, x, yMid);
+                CGContextAddLineToPoint(ctx, xR, yBot);
+                CGContextAddLineToPoint(ctx, xL, yMid);
+                CGContextStrokePath(ctx);
+            });
+        }
+        case CUICCIconAirplane: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat cx = r.size.width / 2, cy = r.size.height / 2;
+                UIBezierPath *p = [UIBezierPath bezierPath];
+                [p moveToPoint:CGPointMake(cx, r.size.height * 0.08)];
+                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, r.size.height * 0.40)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.96, cy + r.size.height * 0.02)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.96, cy + r.size.height * 0.16)];
+                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, cy + r.size.height * 0.26)];
+                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.09, r.size.height * 0.86)];
+                [p addLineToPoint:CGPointMake(cx + r.size.width * 0.30, r.size.height * 0.96)];
+                [p addLineToPoint:CGPointMake(cx, r.size.height * 0.84)];
+                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.30, r.size.height * 0.96)];
+                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, r.size.height * 0.86)];
+                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, cy + r.size.height * 0.26)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.04, cy + r.size.height * 0.16)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.04, cy + r.size.height * 0.02)];
+                [p addLineToPoint:CGPointMake(cx - r.size.width * 0.09, r.size.height * 0.40)];
+                [p closePath];
+                [p fill];
+            });
+        }
+        case CUICCIconMoon: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat R = r.size.width * 0.42;
+                CGPoint c1 = CGPointMake(r.size.width * 0.48, r.size.height * 0.52);
+                CGContextFillEllipseInRect(ctx, CGRectMake(c1.x - R, c1.y - R, R * 2, R * 2));
+                // Erase the bite with destination-out (context is transparent).
+                CGContextSetBlendMode(ctx, kCGBlendModeDestinationOut);
+                CGPoint c2 = CGPointMake(r.size.width * 0.72, r.size.height * 0.34);
+                CGContextFillEllipseInRect(ctx, CGRectMake(c2.x - R, c2.y - R, R * 2, R * 2));
+                CGContextSetBlendMode(ctx, kCGBlendModeNormal);
+            });
+        }
+        case CUICCIconSun: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGPoint c = CGPointMake(r.size.width / 2, r.size.height / 2);
+                CGFloat core = r.size.width * 0.20;
+                CGContextFillEllipseInRect(ctx, CGRectMake(c.x - core, c.y - core, core * 2, core * 2));
+                CGFloat rayIn = r.size.width * 0.32, rayOut = r.size.width * 0.46;
+                CGContextSetLineWidth(ctx, r.size.width * 0.07);
+                for (int i = 0; i < 8; i++) {
+                    CGFloat angle = (CGFloat)i * M_PI / 4.0;
+                    CGContextMoveToPoint(ctx, c.x + rayIn * cosf(angle), c.y + rayIn * sinf(angle));
+                    CGContextAddLineToPoint(ctx, c.x + rayOut * cosf(angle), c.y + rayOut * sinf(angle));
+                    CGContextStrokePath(ctx);
+                }
+            });
+        }
+        case CUICCIconSpeaker: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                UIBezierPath *horn = [UIBezierPath bezierPath];
+                [horn moveToPoint:CGPointMake(r.size.width * 0.10, r.size.height * 0.38)];
+                [horn addLineToPoint:CGPointMake(r.size.width * 0.28, r.size.height * 0.38)];
+                [horn addLineToPoint:CGPointMake(r.size.width * 0.52, r.size.height * 0.14)];
+                [horn addLineToPoint:CGPointMake(r.size.width * 0.52, r.size.height * 0.86)];
+                [horn addLineToPoint:CGPointMake(r.size.width * 0.28, r.size.height * 0.62)];
+                [horn addLineToPoint:CGPointMake(r.size.width * 0.10, r.size.height * 0.62)];
+                [horn closePath];
+                [horn fill];
+                CGPoint c = CGPointMake(r.size.width * 0.52, r.size.height * 0.5);
+                CGFloat a[2] = {r.size.width * 0.22, r.size.width * 0.36};
+                for (int i = 0; i < 2; i++) {
+                    CGContextAddArc(ctx, c.x, c.y, a[i], RAD(-50), RAD(50), 0);
+                    CGContextStrokePath(ctx);
+                }
+            });
+        }
+        case CUICCIconPlay: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                UIBezierPath *p = [UIBezierPath bezierPath];
+                [p moveToPoint:CGPointMake(r.size.width * 0.32, r.size.height * 0.14)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.86, r.size.height * 0.5)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.32, r.size.height * 0.86)];
+                [p closePath];
+                [p fill];
+            });
+        }
+        case CUICCIconPause: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat w = r.size.width * 0.16, h = r.size.height * 0.66;
+                CGFloat y = (r.size.height - h) / 2;
+                CGContextFillRect(ctx, CGRectMake(r.size.width * 0.30, y, w, h));
+                CGContextFillRect(ctx, CGRectMake(r.size.width * 0.58, y, w, h));
+            });
+        }
+        case CUICCIconPrev: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat y = r.size.height * 0.18, h = r.size.height * 0.64;
+                CGFloat bw = r.size.width * 0.08;
+                CGContextFillRect(ctx, CGRectMake(r.size.width * 0.14, y, bw, h));
+                UIBezierPath *p = [UIBezierPath bezierPath];
+                [p moveToPoint:CGPointMake(r.size.width * 0.86, y)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.30, y + h / 2)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.86, y + h)];
+                [p closePath];
+                [p fill];
+            });
+        }
+        case CUICCIconNext: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat y = r.size.height * 0.18, h = r.size.height * 0.64;
+                CGFloat bw = r.size.width * 0.08;
+                CGContextFillRect(ctx, CGRectMake(r.size.width * 0.78, y, bw, h));
+                UIBezierPath *p = [UIBezierPath bezierPath];
+                [p moveToPoint:CGPointMake(r.size.width * 0.14, y)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.70, y + h / 2)];
+                [p addLineToPoint:CGPointMake(r.size.width * 0.14, y + h)];
+                [p closePath];
+                [p fill];
+            });
+        }
+        case CUICCIconGear: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGPoint c = CGPointMake(r.size.width / 2, r.size.height / 2);
+                CGFloat outer = r.size.width * 0.30;
+                CGContextSetLineWidth(ctx, r.size.width * 0.11);
+                CGContextStrokeEllipseInRect(ctx, CGRectMake(c.x - outer, c.y - outer, outer * 2, outer * 2));
+                CGFloat rayIn = outer * 0.80, rayOut = r.size.width * 0.46;
+                CGContextSetLineWidth(ctx, r.size.width * 0.08);
+                for (int i = 0; i < 8; i++) {
+                    CGFloat angle = (CGFloat)i * M_PI / 4.0 + M_PI / 8.0;
+                    CGContextMoveToPoint(ctx, c.x + rayIn * cosf(angle), c.y + rayIn * sinf(angle));
+                    CGContextAddLineToPoint(ctx, c.x + rayOut * cosf(angle), c.y + rayOut * sinf(angle));
+                    CGContextStrokePath(ctx);
+                }
+            });
+        }
+    }
+    return nil;
+}
+
+UIImage *CUICCIconImage(CUICCIcon icon, CGSize size, UIColor *color) {
+    static NSMutableDictionary *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [[NSMutableDictionary alloc] init]; });
+
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    [color getRed:&r green:&g blue:&b alpha:&a];
+    NSString *key = [NSString stringWithFormat:@"%d-%.0f-%.0f-%03d%03d%03d%03d",
+                     (int)icon, size.width, size.height,
+                     (int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255)];
+    @synchronized (cache) {
+        UIImage *cached = cache[key];
+        if (cached) return cached;
+    }
+
+    UIImage *image = CUICCImageForIcon(icon, size, color);
+    if (image) {
+        @synchronized (cache) {
+            cache[key] = image;
+        }
+    }
+    return image;
+}

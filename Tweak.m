@@ -6,6 +6,7 @@
 #import "Core/CUIGlassView.h"
 #import "Dock/CUIDockController.h"
 #import "VolumeHUD/CUIVolumeController.h"
+#import "ControlCenter/CUIControlCenterController.h"
 
 static void LUIApplyModules() {
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
@@ -20,6 +21,12 @@ static void LUIApplyModules() {
         [[CUIVolumeController sharedInstance] activate];
     } else {
         [[CUIVolumeController sharedInstance] deactivate];
+    }
+
+    if (config.enabled && config.controlCenterEnabled) {
+        [[CUIControlCenterController sharedInstance] activate];
+    } else {
+        [[CUIControlCenterController sharedInstance] deactivate];
     }
 }
 

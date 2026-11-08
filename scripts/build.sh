@@ -40,7 +40,7 @@ include_flags() {
     local dirs="" d
     while IFS= read -r d; do
         dirs="$dirs -I$d"
-    done < <(find "$ROOT/Core" "$ROOT/Dock" "$ROOT/VolumeHUD" -name '*.h' 2>/dev/null | xargs -n1 dirname | sort -u)
+    done < <(find "$ROOT/Core" "$ROOT/Dock" "$ROOT/VolumeHUD" "$ROOT/ControlCenter" -name '*.h' 2>/dev/null | xargs -n1 dirname | sort -u)
     echo "$dirs"
 }
 
@@ -56,7 +56,7 @@ compile_all() {
         -isysroot "$compile_sysroot" $COMMON_CFLAGS $incs -c "$ROOT/Tweak.m" -o "$OBJ/Tweak.o" \
         || die "compile failed: Tweak.m"
 
-    for src in "$ROOT/Core/"*.m "$ROOT/Dock/"*.m "$ROOT/VolumeHUD/"*.m; do
+    for src in "$ROOT/Core/"*.m "$ROOT/Dock/"*.m "$ROOT/VolumeHUD/"*.m "$ROOT/ControlCenter/"*.m; do
         [ -f "$src" ] || continue
         obj="$OBJ/$(basename "$src" .m).o"
         echo "  CC $(basename "$src")"

@@ -60,7 +60,8 @@
     if (_blurView) _blurView.frame = _contentView.bounds;
     _tintView.frame = _contentView.bounds;
 
-    CGFloat radius = MIN(self.bounds.size.height / 2.0, 28.0);
+    CGFloat radius = _capsuleShape ? self.bounds.size.height / 2.0
+                                   : MIN(self.bounds.size.height / 2.0, 28.0);
     _contentView.layer.cornerRadius = radius;
     _highlightLayer.frame = CGRectMake(0, 0, _contentView.bounds.size.width,
                                        _contentView.bounds.size.height * 0.5);

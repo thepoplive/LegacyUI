@@ -88,6 +88,31 @@ static void LUIDockMaybeDumpHierarchy(UIView *container) {
     NSLog(@"[LegacyUI] hierarchy dumped");
 }
 
+// iOS 6: the dock background comes from +backgroundImageForOrientation: and is
+// drawn via layer contents of the container / icon list (verified header map),
+// so hiding UIViews is not enough — clear the drawable layers as well.
+static void LUIDockClearDrawableLayers(UIView *view) {
+    view.layer.contents = nil;
+    view.backgroundColor = [UIColor clearColor];
+}
+
+// Union of the actual icon frames inside the dock icon list (container coords).
+static CGRect LUIIOS6IconUnionFrame(UIView *iconList) {
+    CGRect unionRect = CGRectNull;
+    for (UIView *sub in iconList.subviews) {
+        if ([NSStringFromClass([sub class]) rangeOfString:@"IconView"].location == NSNotFound) {
+            continue;
+        }
+        if (CGRectIsNull(unionRect)) {
+            unionRect = sub.frame;
+        } else {
+            unionRect = CGRectUnion(unionRect, sub.frame);
+        }
+    }
+    if (CGRectIsNull(unionRect) || CGRectIsEmpty(unionRect)) return CGRectNull;
+    return CGRectOffset(unionRect, iconList.frame.origin.x, iconList.frame.origin.y);
+}
+
 static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds) {
     CUIDockView *glass = objc_getAssociatedObject(hostView, &kDockGlassAssociationKey);
 
@@ -108,6 +133,7 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
 
     UIView *iconList = LUIDockFindIconList(hostView);
 
+    CGRect glassFrame;
     if (hideIvarBackgrounds) {
         // iOS 8 path: hide via verified ivars.
         NSArray *backgroundIvars = @[ @"_backgroundView", @"_backgroundImageView", @"_accessibilityBackgroundView" ];
@@ -115,33 +141,49 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
             UIView *view = LUIDockIvarView(hostView, ivarName);
             if (view) view.hidden = YES;
         }
-    } else if (iconList) {
-        // iOS 6 path: the container is dedicated to the dock, hide everything
-        // that is not the icon list and not our glass.
-        for (UIView *sub in hostView.subviews) {
-            if (sub == glass || sub == iconList) continue;
-            sub.hidden = YES;
-        }
-    }
-
-    LUIDockSetLabelsHiddenRecursive(hostView, YES);
-
-    // iOS 8: center icons; iOS 6: glass wraps the icon list frame instead.
-    CGRect glassFrame;
-    if (hideIvarBackgrounds) {
         if (iconList && iconList.superview == hostView) {
             iconList.center = CGPointMake(hostView.bounds.size.width / 2.0,
                                           hostView.bounds.size.height / 2.0);
         }
         glassFrame = CGRectInset(hostView.bounds, 5, 3);
-    } else if (iconList) {
-        glassFrame = CGRectInset(iconList.frame, -10, -8);
     } else {
-        glassFrame = CGRectInset(hostView.bounds, 5, 3);
+        // iOS 6 path: the container is dedicated to the dock — hide everything
+        // that is not the icon list and not our glass, and clear the native
+        // dock background which is drawn via layer contents.
+        for (UIView *sub in hostView.subviews) {
+            if (sub == glass || sub == iconList) continue;
+            sub.hidden = YES;
+        }
+        LUIDockClearDrawableLayers(hostView);
+        if (iconList) {
+            LUIDockClearDrawableLayers(iconList);
+            // Extra safety: hide any image views nested inside the icon list
+            // (icons themselves are SBIconView, not UIImageView).
+            for (UIView *sub in iconList.subviews) {
+                if ([sub isKindOfClass:[UIImageView class]]) {
+                    sub.hidden = YES;
+                }
+            }
+        }
+
+        if (iconList) {
+            CGRect unionRect = LUIIOS6IconUnionFrame(iconList);
+            if (!CGRectIsNull(unionRect)) {
+                // Tight capsule around the icons themselves.
+                glassFrame = CGRectInset(unionRect, -10, -7);
+            } else {
+                glassFrame = CGRectInset(iconList.frame, -6, -6);
+            }
+        } else {
+            glassFrame = CGRectInset(hostView.bounds, 5, 3);
+        }
     }
+
+    LUIDockSetLabelsHiddenRecursive(hostView, YES);
 
     if (!glass) {
         glass = [[CUIDockView alloc] initWithFrame:glassFrame];
+        glass.capsuleShape = !hideIvarBackgrounds;
 
         if (iconList) {
             [hostView insertSubview:glass belowSubview:iconList];

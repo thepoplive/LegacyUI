@@ -2,6 +2,7 @@
 #import "CUIVolumePillView.h"
 #import "../Core/CUIConfiguration.h"
 #import "../Core/CUICompatibility.h"
+#import "../Core/CUIOverlayWindow.h"
 #import <MediaPlayer/MediaPlayer.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -267,7 +268,8 @@ static void LUISwizzleHUDController() {
 - (void)presentPill:(void (^)(CUIVolumePillView *pill))configure {
     if (!LUIVolumeWanted() && !LUISilentWanted()) return;
 
-    UIWindow *window = [self hostWindow];
+    // Own high-level window: the pill stays visible over apps and the lock screen.
+    UIWindow *window = CUISharedOverlayWindow();
     if (!window) return;
 
     if (!_pill) {
@@ -284,6 +286,7 @@ static void LUISwizzleHUDController() {
         [window addSubview:_pill];
     }
 
+    window.frame = [UIScreen mainScreen].bounds;
     _pill.frame = [self pillFrameInWindow];
     if (configure) configure(_pill);
     [_pill showWithAnimation];

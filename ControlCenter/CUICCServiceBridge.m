@@ -52,9 +52,10 @@ static void CUICCDumpIvars(NSMutableString *out, NSString *className) {
     Ivar *ivars = class_copyIvarList(cls, &count);
     [out appendFormat:@"\n===== ivars of %@ =====\n", className];
     for (unsigned int i = 0; i < count; i++) {
-        [out appendFormat:@"  %@ @%zu\n",
-            ivar_getName(ivars[i]) ?: @"<unnamed>",
-            ivar_getOffset(ivars[i])];
+        char *nameBytes = ivar_getName(ivars[i]);
+        [out appendFormat:@"  %@ @%lu\n",
+            nameBytes ? [NSString stringWithUTF8String:nameBytes] : @"<unnamed>",
+            (unsigned long)ivar_getOffset(ivars[i])];
     }
     free(ivars);
 }

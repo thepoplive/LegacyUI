@@ -168,7 +168,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     BOOL locked = NO;
     id app = [UIApplication sharedApplication];
     if ([app respondsToSelector:@selector(isLocked)]) {
-        locked = [app performSelector:@selector(isLocked)];
+        locked = ((BOOL (*)(id, SEL))objc_msgSend)(app, @selector(isLocked));
     }
 
     BOOL appFrontmost = NO;

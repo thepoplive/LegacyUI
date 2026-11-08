@@ -124,6 +124,83 @@ static UIImage *CUIIOS8TileBGSwizzled(id self, SEL _cmd, long state) {
     return CUIIOS8TileImage(size, (NSUInteger)state);
 }
 
+#pragma mark - Toggle restyle (8.4.1 ground truth)
+
+// On 8.4.1 the circle background is a full-size UIImageView inside each
+// SBControlCenterButton, and the on/off state is the plain UIControl
+// `selected` flag (dump-verified: WiFi off -> selected=0, others selected=1).
+// We swap the background image for our glass/violet circles and re-apply on
+// every state change via setSelected:/setHighlighted:.
+
+static UIImage *CUIIOS8CachedCircle(CGSize size, NSUInteger state) {
+    static NSMutableDictionary *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [[NSMutableDictionary alloc] init]; });
+    NSString *key = [NSString stringWithFormat:@"%.0fx%.0f-%lu",
+                     size.width, size.height, (unsigned long)state];
+    @synchronized (cache) {
+        UIImage *hit = cache[key];
+        if (hit) return hit;
+    }
+    UIImage *image = CUIIOS8CircleImage(size, state);
+    if (image) {
+        @synchronized (cache) { cache[key] = image; }
+    }
+    return image;
+}
+
+static void CUIIOS8StyleButton(UIControl *button) {
+    static Class buttonClass = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ buttonClass = NSClassFromString(@"SBControlCenterButton"); });
+    if (!buttonClass || ![button isKindOfClass:buttonClass]) return;
+
+    // Full-size square UIImageView = the circle background plate.
+    UIImageView *plate = nil;
+    for (UIView *sub in button.subviews) {
+        if (![sub isKindOfClass:[UIImageView class]]) continue;
+        if (sub.frame.size.width >= button.bounds.size.width * 0.95 &&
+            ABS(sub.frame.size.width - sub.frame.size.height) < 1.0) {
+            plate = (UIImageView *)sub;
+            break;
+        }
+    }
+    if (!plate) return;
+
+    NSUInteger state = 0;
+    if (button.selected) state |= UIControlStateSelected;
+    if (button.highlighted) state |= UIControlStateHighlighted;
+    UIImage *styled = CUIIOS8CachedCircle(button.bounds.size, state);
+    if (styled && plate.image != styled) plate.image = styled;
+}
+
+static void CUIIOS8StyleButtonsInTree(UIView *view) {
+    if ([view isKindOfClass:[UIControl class]]) {
+        CUIIOS8StyleButton((UIControl *)view);
+    }
+    for (UIView *sub in view.subviews) {
+        CUIIOS8StyleButtonsInTree(sub);
+    }
+}
+
+static IMP g_origSetSelected = NULL;
+
+static void CUIIOS8SetSelectedSwizzled(id self, SEL _cmd, BOOL selected) {
+    if (g_origSetSelected) {
+        ((void (*)(id, SEL, BOOL))g_origSetSelected)(self, _cmd, selected);
+    }
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButton((UIControl *)self);
+}
+
+static IMP g_origSetHighlighted = NULL;
+
+static void CUIIOS8SetHighlightedSwizzled(id self, SEL _cmd, BOOL highlighted) {
+    if (g_origSetHighlighted) {
+        ((void (*)(id, SEL, BOOL))g_origSetHighlighted)(self, _cmd, highlighted);
+    }
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButton((UIControl *)self);
+}
+
 #pragma mark - Panel glass overlay
 
 static IMP g_origPanelLayout = NULL;
@@ -256,6 +333,10 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
 
     CUIIOS8MaybeDumpCC(panel);
 
+    // Catch-all: freshly created buttons and page scrolls get styled on the
+    // next layout pass, even if a state setter slipped through.
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButtonsInTree(panel);
+
     CGFloat radius = 24.0;
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:panel.bounds
         byRoundingCorners:UIRectCornerTopLeft | UIRectCornerTopRight
@@ -296,17 +377,27 @@ static dispatch_once_t g_ios8CCOnce;
 void CUIIOS8InstallControlCenterTheme(void) {
     dispatch_once(&g_ios8CCOnce, ^{
         Class buttonClass = NSClassFromString(@"SBUIControlCenterButton");
-        if (!buttonClass) {
-            NSLog(@"[LegacyUI] SBUIControlCenterButton unavailable — iOS 8 CC theming off");
-            return;
+        if (buttonClass) {
+            // iOS 8.0-8.1: image factory swizzles (no-ops if the selectors
+            // were removed in later 8.x — verified missing on 8.4.1).
+            CUIIOS8SwizzleClassMethod(buttonClass,
+                                      @selector(_circleBackgroundImageForState:),
+                                      (IMP)CUIIOS8CircleBGSwizzled, &g_origCircleBG);
+            CUIIOS8SwizzleClassMethod(buttonClass,
+                                      @selector(_roundRectBackgroundImageForState:),
+                                      (IMP)CUIIOS8TileBGSwizzled, &g_origTileBG);
+            NSLog(@"[LegacyUI] SBUIControlCenterButton image factories swizzled");
         }
-        CUIIOS8SwizzleClassMethod(buttonClass,
-                                  @selector(_circleBackgroundImageForState:),
-                                  (IMP)CUIIOS8CircleBGSwizzled, &g_origCircleBG);
-        CUIIOS8SwizzleClassMethod(buttonClass,
-                                  @selector(_roundRectBackgroundImageForState:),
-                                  (IMP)CUIIOS8TileBGSwizzled, &g_origTileBG);
-        NSLog(@"[LegacyUI] SBUIControlCenterButton image factories swizzled");
+
+        // iOS 8.4.1 path: restyle the background plate per UIControl state.
+        Class ccButtonClass = NSClassFromString(@"SBControlCenterButton");
+        if (ccButtonClass) {
+            CUIIOS8SwizzleMethod(ccButtonClass, @selector(setSelected:),
+                                 (IMP)CUIIOS8SetSelectedSwizzled, &g_origSetSelected);
+            CUIIOS8SwizzleMethod(ccButtonClass, @selector(setHighlighted:),
+                                 (IMP)CUIIOS8SetHighlightedSwizzled, &g_origSetHighlighted);
+            NSLog(@"[LegacyUI] SBControlCenterButton state swizzles installed");
+        }
 
         Class panelClass = NSClassFromString(@"SBControlCenterContentContainerView");
         if (panelClass && class_getInstanceMethod(panelClass, @selector(layoutSubviews))) {

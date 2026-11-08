@@ -8,5 +8,7 @@
 - (void)deactivate;
 
 - (BOOL)isOpen;
+- (void)openControlCenter;
+- (void)closeControlCenter;
 
 @end

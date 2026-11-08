@@ -84,7 +84,7 @@ static void LUIDockMaybeDumpHierarchy(UIView *container) {
     LUIDumpView(container, dump, 0);
 
     Class controllerClass = NSClassFromString(@"SBIconController");
-    if (controllerClass && class_getInstanceMethod(controllerClass, @selector(sharedInstance))) {
+    if (controllerClass && class_getClassMethod(controllerClass, @selector(sharedInstance))) {
         id shared = [controllerClass performSelector:@selector(sharedInstance)];
         if (shared && [shared respondsToSelector:@selector(contentView)]) {
             UIView *contentView = [shared performSelector:@selector(contentView)];
@@ -146,7 +146,7 @@ static void LUIIOS6SetReflectionsHidden(UIView *view, BOOL hide) {
 // of the container and not the icon scroll view.
 static void LUIIOS6SetNativeDockBarHidden(UIView *container, BOOL hide) {
     Class controllerClass = NSClassFromString(@"SBIconController");
-    if (!controllerClass || !class_getInstanceMethod(controllerClass, @selector(sharedInstance))) return;
+    if (!controllerClass || !class_getClassMethod(controllerClass, @selector(sharedInstance))) return;
     id shared = [controllerClass performSelector:@selector(sharedInstance)];
     if (![shared respondsToSelector:@selector(contentView)]) return;
     UIView *contentView = [shared performSelector:@selector(contentView)];
@@ -375,7 +375,7 @@ static void LUIInstallIOS6Dock() {
         g_swizzleInstalled = YES;
 
         // Trigger an immediate attach on the existing controller instance.
-        if (class_getInstanceMethod(iconControllerClass, @selector(sharedInstance))) {
+        if (class_getClassMethod(iconControllerClass, @selector(sharedInstance))) {
             id shared = [iconControllerClass performSelector:@selector(sharedInstance)];
             if (shared) {
                 ((void (*)(id, SEL))objc_msgSend)(shared, @selector(dockContainerView));
@@ -422,7 +422,7 @@ static void LUIInstallIOS6Dock() {
     if (CUIIsiOS6OrEarlier()) {
         Class iconControllerClass = NSClassFromString(@"SBIconController");
         if (iconControllerClass &&
-            class_getInstanceMethod(iconControllerClass, @selector(sharedInstance))) {
+            class_getClassMethod(iconControllerClass, @selector(sharedInstance))) {
             id shared = [iconControllerClass performSelector:@selector(sharedInstance)];
             if (shared) {
                 ((void (*)(id, SEL))objc_msgSend)(shared, @selector(dockContainerView));

@@ -13,7 +13,7 @@
 static id LUIIOS6SharedVolumeControl() {
     Class volumeControlClass = NSClassFromString(@"VolumeControl");
     if (!volumeControlClass) return nil;
-    if (!class_getInstanceMethod(volumeControlClass, @selector(sharedVolumeControl))) return nil;
+    if (!class_getClassMethod(volumeControlClass, @selector(sharedVolumeControl))) return nil;
     id shared = [volumeControlClass performSelector:@selector(sharedVolumeControl)];
     return shared;
 }

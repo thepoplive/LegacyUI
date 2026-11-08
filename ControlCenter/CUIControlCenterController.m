@@ -130,7 +130,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         CUICCTrace(@"host: SBIconController class nil");
         return nil;
     }
-    if (!class_getInstanceMethod(controllerClass, @selector(sharedInstance))) {
+    if (!class_getClassMethod(controllerClass, @selector(sharedInstance))) {
         CUICCTrace(@"host: sharedInstance missing");
         return nil;
     }

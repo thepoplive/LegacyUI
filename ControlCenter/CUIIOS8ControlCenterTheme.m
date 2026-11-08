@@ -96,8 +96,12 @@ static UIImage *CUIIOS8TileImage(CGSize size, NSUInteger state) {
 #pragma mark - Swizzles
 
 static IMP g_origCircleBG = NULL;
+static IMP g_origTileBG = NULL;
+static int s_circleCalls = 0;
+static int s_tileCalls = 0;
 
 static UIImage *CUIIOS8CircleBGSwizzled(id self, SEL _cmd, long state) {
+    s_circleCalls++;
     UIImage *orig = NULL;
     if (g_origCircleBG) {
         orig = ((UIImage *(*)(id, SEL, long))g_origCircleBG)(self, _cmd, state);
@@ -108,9 +112,8 @@ static UIImage *CUIIOS8CircleBGSwizzled(id self, SEL _cmd, long state) {
     return CUIIOS8CircleImage(size, (NSUInteger)state);
 }
 
-static IMP g_origTileBG = NULL;
-
 static UIImage *CUIIOS8TileBGSwizzled(id self, SEL _cmd, long state) {
+    s_tileCalls++;
     UIImage *orig = NULL;
     if (g_origTileBG) {
         orig = ((UIImage *(*)(id, SEL, long))g_origTileBG)(self, _cmd, state);
@@ -125,6 +128,69 @@ static UIImage *CUIIOS8TileBGSwizzled(id self, SEL _cmd, long state) {
 
 static char kIOS8CCPanelTintKey;
 static char kIOS8CCPanelBorderKey;
+
+// Ground-truth diagnostics: /var/mobile/.legacyui_ccdump -> full native CC
+// hierarchy on THIS firmware (8.4.1), plus swizzle status and factory call
+// counters, written to /var/mobile/legacyui_ccdump.txt on the next panel
+// layout (i.e. the first Control Center open after respring).
+static void CUIIOS8DumpView(UIView *view, NSMutableString *out, int depth) {
+    for (int i = 0; i < depth; i++) [out appendString:@"  "];
+    [out appendFormat:@"%@ frame=%@ alpha=%.2f hidden=%d",
+        NSStringFromClass([view class]),
+        NSStringFromCGRect(view.frame),
+        view.alpha, view.hidden];
+    if ([view isKindOfClass:[UIImageView class]]) {
+        UIImageView *iv = (UIImageView *)view;
+        [out appendFormat:@" image=%@",
+            iv.image ? NSStringFromCGSize(iv.image.size) : @"nil"];
+    }
+    if ([view isKindOfClass:[UIControl class]]) {
+        [out appendFormat:@" state=%lu selected=%d highlighted=%d",
+            (unsigned long)[(UIControl *)view state],
+            [(UIControl *)view isSelected],
+            [(UIControl *)view isHighlighted]];
+    }
+    [out appendString:@"\n"];
+    for (UIView *sub in view.subviews) {
+        CUIIOS8DumpView(sub, out, depth + 1);
+    }
+}
+
+static void CUIIOS8MaybeDumpCC(UIView *panel) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:@"/var/mobile/.legacyui_ccdump"]) return;
+
+    NSMutableString *dump = [NSMutableString string];
+    [dump appendFormat:@"=== LegacyUI iOS8 CC diagnostics ===\n"];
+    [dump appendFormat:@"swizzles: circle=%@ tile=%@ panel=%@\n",
+        g_origCircleBG ? @"installed" : @"MISSING",
+        g_origTileBG ? @"installed" : @"MISSING",
+        g_origPanelLayout ? @"installed" : @"MISSING"];
+    [dump appendFormat:@"factory calls: circle=%d tile=%d\n", s_circleCalls, s_tileCalls];
+
+    Class buttonClass = NSClassFromString(@"SBUIControlCenterButton");
+    [dump appendFormat:@"SBUIControlCenterButton: %@\n", buttonClass ? @"present" : @"ABSENT");
+    if (buttonClass) {
+        [dump appendFormat:@"  +_circleBackgroundImageForState: %@\n",
+            class_getClassMethod(buttonClass, @selector(_circleBackgroundImageForState:))
+                ? @"yes" : @"NO"];
+        [dump appendFormat:@"  +_roundRectBackgroundImageForState: %@\n",
+            class_getClassMethod(buttonClass, @selector(_roundRectBackgroundImageForState:))
+                ? @"yes" : @"NO"];
+    }
+    [dump appendFormat:@"SBCCButtonLikeSectionView: %@\n",
+        NSClassFromString(@"SBCCButtonLikeSectionView") ? @"present" : @"ABSENT"];
+
+    // Walk up to the CC root for the full tree.
+    UIView *root = panel;
+    while (root.superview) root = root.superview;
+    [dump appendString:@"\n=== full CC view tree (from window root) ===\n"];
+    CUIIOS8DumpView(root, dump, 0);
+
+    [dump writeToFile:@"/var/mobile/legacyui_ccdump.txt"
+           atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/.legacyui_ccdump" error:NULL];
+    NSLog(@"[LegacyUI] CC hierarchy dumped");
+}
 
 static UIView *CUIIOS8IvarView(id view, NSString *ivarName) {
     Ivar ivar = class_getInstanceVariable([view class], [ivarName UTF8String]);
@@ -187,6 +253,8 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     UIView *border = objc_getAssociatedObject(panel, &kIOS8CCPanelBorderKey);
     tint.frame = panel.bounds;
     border.frame = panel.bounds;
+
+    CUIIOS8MaybeDumpCC(panel);
 
     CGFloat radius = 24.0;
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:panel.bounds

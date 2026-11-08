@@ -177,6 +177,24 @@ static void CUICCReadLiveStates(NSMutableString *out) {
     CFPropertyListRef dnd = CFPreferencesCopyAppValue(
         (CFStringRef)@"dndEnabled", (CFStringRef)@"com.apple.DoNotDisturb");
     [out appendFormat:@"  dndEnabled pref = %@\n", dnd ? CFBridgingRelease(dnd) : @"<absent>"];
+
+    // Full DoNotDisturb domain snapshot: reveals every key Settings writes
+    // (dndEnabled alone may not be the whole story for the quiet-mode UI).
+    CFArrayRef dndKeys = CFPreferencesCopyKeyList(
+        (CFStringRef)@"com.apple.DoNotDisturb", kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    if (dndKeys) {
+        CFIndex n = CFArrayGetCount(dndKeys);
+        [out appendFormat:@"  DoNotDisturb domain (%ld keys):\n", (long)n];
+        for (CFIndex i = 0; i < n; i++) {
+            NSString *key = (__bridge NSString *)CFArrayGetValueAtIndex(dndKeys, i);
+            CFPropertyListRef v = CFPreferencesCopyAppValue(
+                (CFStringRef)key, (CFStringRef)@"com.apple.DoNotDisturb");
+            [out appendFormat:@"    %@ = %@\n", key, v ? CFBridgingRelease(v) : @"<nil>"];
+        }
+        CFRelease(dndKeys);
+    } else {
+        [out appendString:@"  DoNotDisturb domain: <no keys>\n"];
+    }
 }
 
 @implementation CUICCServiceBridge
@@ -295,10 +313,14 @@ static void CUICCReadLiveStates(NSMutableString *out) {
         (CFStringRef)@"com.apple.DoNotDisturb.changed", NULL, NULL, TRUE);
 
     // The iOS 6 status-bar moon (quiet mode item) re-reads prefs here —
-    // verified +sharedDataManager and -_updateQuietModeItem in the 6.1 dumps
-    // of SBStatusBarDataManager. Direct refresh is deterministic; the Darwin
-    // broadcast above covers any other listeners.
+    // verified +sharedDataManager, -_updateQuietModeItem AND -_quietModeChange
+    // (the notification handler itself) in the on-device dump of
+    // SBStatusBarDataManager. Belt and suspenders: the handler re-reads the
+    // pref and re-posts status bar data; the update method refreshes the item.
     id manager = CUICCSharedInstanceFor(@"SBStatusBarDataManager", @"sharedDataManager");
+    if (CUICCResponds(manager, @"_quietModeChange")) {
+        [manager performSelector:@selector(_quietModeChange)];
+    }
     if (CUICCResponds(manager, @"_updateQuietModeItem")) {
         [manager performSelector:@selector(_updateQuietModeItem)];
     }

@@ -23,6 +23,7 @@
 - (void)prepareForOpen;
 
 @property (nonatomic, copy) void (^onGearTap)(void);
+@property (nonatomic, copy) void (^onLockTap)(void);
 @property (nonatomic, copy) void (^onOutsideTap)(void);
 
 @end

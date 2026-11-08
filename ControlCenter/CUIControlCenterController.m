@@ -12,6 +12,7 @@
 #import "../VolumeHUD/CUIVolumeController.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <dlfcn.h>
 
 // Verified in iOS 6.1 & 8.0 SpringBoard.h:
 //   - (void)menuButtonDown:(struct __GSEvent *)arg1;
@@ -209,6 +210,9 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     _panelView.onGearTap = ^{
         [self closeAndOpenSettings];
     };
+    _panelView.onLockTap = ^{
+        [self closeAndLock];
+    };
     [self wireControls];
     [hostView addSubview:_panelView];
 }
@@ -355,6 +359,34 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     } else {
         [app openURL:[NSURL URLWithString:@"prefs://"]];
     }
+}
+
+#pragma mark Screen lock
+
+- (void)closeAndLock {
+    [self closeControlCenter];
+    [self performSelector:@selector(lockDeviceNow) withObject:nil afterDelay:0.35];
+}
+
+// Verifies against the 6.1 dumps (SBUIController -lockFromSource:) and falls
+// back to the GraphicsServices GSEvent lock the power button itself feeds.
+- (void)lockDeviceNow {
+    Class uiControllerClass = NSClassFromString(@"SBUIController");
+    id uiController = uiControllerClass
+        ? [uiControllerClass performSelector:@selector(sharedInstance)]
+        : nil;
+    if ([uiController respondsToSelector:@selector(lockFromSource:)]) {
+        ((void (*)(id, SEL, int))objc_msgSend)(uiController,
+                                               @selector(lockFromSource:), 0);
+        return;
+    }
+
+    static void (*CUILockDeviceFn)(void) = NULL;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CUILockDeviceFn = (void (*)(void))dlsym(RTLD_DEFAULT, "GSEventLockDevice");
+    });
+    if (CUILockDeviceFn) CUILockDeviceFn();
 }
 
 @end

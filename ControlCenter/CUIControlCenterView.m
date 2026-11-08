@@ -16,6 +16,7 @@ static const CGFloat kPanelHeightRatio = 0.74;
 @property (nonatomic, strong) UIView *tintView;
 @property (nonatomic, strong) UIView *handleView;
 @property (nonatomic, strong) UIButton *gearButton;
+@property (nonatomic, strong) UIButton *lockButton;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *artistLabel;
 @property (nonatomic, strong) CUIControlCenterItem *wifiItem;
@@ -77,6 +78,15 @@ static const CGFloat kPanelHeightRatio = 0.74;
               forControlEvents:UIControlEventTouchUpInside];
         [_panel addSubview:_gearButton];
 
+        // Screen lock button, mirrored against the gear (opposite corner).
+        _lockButton = [UIButton buttonWithType:UIButtonTypeCustom];
+        [_lockButton setImage:CUICCIconImage(CUICCIconLock, CGSizeMake(24, 24),
+                                              [UIColor colorWithWhite:1.0 alpha:0.8])
+                   forState:UIControlStateNormal];
+        [_lockButton addTarget:self action:@selector(lockTap)
+             forControlEvents:UIControlEventTouchUpInside];
+        [_panel addSubview:_lockButton];
+
         // Track info in the header, centered between the handle and the gear.
         _titleLabel = [[UILabel alloc] init];
         _titleLabel.font = [UIFont boldSystemFontOfSize:13];
@@ -109,7 +119,7 @@ static const CGFloat kPanelHeightRatio = 0.74;
         [_panel addSubview:_volumeSlider];
         [_panel addSubview:_musicCard];
 
-        _staggerViews = @[_handleView, _gearButton,
+        _staggerViews = @[_handleView, _gearButton, _lockButton,
                           _wifiItem, _bluetoothItem, _dndItem, _airplaneItem,
                           _brightnessSlider, _volumeSlider, _musicCard];
 
@@ -144,6 +154,7 @@ static const CGFloat kPanelHeightRatio = 0.74;
 
     _handleView.center = CGPointMake(w / 2, 9);
     _gearButton.frame = CGRectMake(w - 14 - 34, 14, 34, 34);
+    _lockButton.frame = CGRectMake(14, 14, 34, 34);
 
     _titleLabel.frame = CGRectMake(52, 16, w - 52 - 52, 15);
     _artistLabel.frame = CGRectMake(52, 33, w - 52 - 52, 13);
@@ -237,6 +248,10 @@ static const CGFloat kPanelHeightRatio = 0.74;
 
 - (void)gearTap {
     if (self.onGearTap) self.onGearTap();
+}
+
+- (void)lockTap {
+    if (self.onLockTap) self.onLockTap();
 }
 
 - (void)outsideTap {

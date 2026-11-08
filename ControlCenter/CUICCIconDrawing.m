@@ -163,6 +163,27 @@ static UIImage *CUICCImageForIcon(CUICCIcon icon, CGSize size, UIColor *color) {
                 [p fill];
             });
         }
+        case CUICCIconLock: {
+            return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
+                CGFloat w = r.size.width, h = r.size.height;
+                // Shackle arc.
+                CGFloat shackle = w * 0.24;
+                CGContextSetLineWidth(ctx, w * 0.10);
+                CGContextAddArc(ctx, w * 0.5, h * 0.30, shackle, RAD(180), RAD(360), 0);
+                CGContextStrokePath(ctx);
+                // Body: rounded rect.
+                CGFloat bw = w * 0.58, bh = h * 0.40;
+                CGFloat bx = (w - bw) / 2.0, by = h * 0.42;
+                UIBezierPath *body = [UIBezierPath bezierPathWithRoundedRect:
+                    CGRectMake(bx, by, bw, bh) cornerRadius:w * 0.10];
+                CGContextAddPath(ctx, body.CGPath);
+                CGContextFillPath(ctx);
+                // Keyhole.
+                CGFloat k = w * 0.05;
+                CGContextFillEllipseInRect(ctx,
+                    CGRectMake(w * 0.5 - k, by + bh * 0.35, k * 2, k * 2));
+            });
+        }
         case CUICCIconGear: {
             return CUICCRender(size, color, ^(CGContextRef ctx, CGRect r) {
                 CGPoint c = CGPointMake(r.size.width / 2, r.size.height / 2);

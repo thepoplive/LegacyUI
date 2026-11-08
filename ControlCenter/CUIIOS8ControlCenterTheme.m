@@ -126,6 +126,8 @@ static UIImage *CUIIOS8TileBGSwizzled(id self, SEL _cmd, long state) {
 
 #pragma mark - Panel glass overlay
 
+static IMP g_origPanelLayout = NULL;
+
 static char kIOS8CCPanelTintKey;
 static char kIOS8CCPanelBorderKey;
 
@@ -168,7 +170,7 @@ static void CUIIOS8MaybeDumpCC(UIView *panel) {
     [dump appendFormat:@"factory calls: circle=%d tile=%d\n", s_circleCalls, s_tileCalls];
 
     Class buttonClass = NSClassFromString(@"SBUIControlCenterButton");
-    [dump appendFormat:@"SBUIControlCenterButton: %@\n", buttonClass ? @"present" : @"ABSENT");
+    [dump appendFormat:@"SBUIControlCenterButton: %@\n", buttonClass ? @"present" : @"ABSENT"];
     if (buttonClass) {
         [dump appendFormat:@"  +_circleBackgroundImageForState: %@\n",
             class_getClassMethod(buttonClass, @selector(_circleBackgroundImageForState:))
@@ -198,8 +200,6 @@ static UIView *CUIIOS8IvarView(id view, NSString *ivarName) {
     id value = object_getIvar(view, ivar);
     return [value isKindOfClass:[UIView class]] ? value : nil;
 }
-
-static IMP g_origPanelLayout = NULL;
 
 static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     if (g_origPanelLayout) {

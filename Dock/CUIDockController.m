@@ -80,8 +80,19 @@ static void LUIDumpView(UIView *view, NSMutableString *out, int depth) {
 static void LUIDockMaybeDumpHierarchy(UIView *container) {
     if (![[NSFileManager defaultManager] fileExistsAtPath:@"/var/mobile/.legacyui_dump"]) return;
     NSMutableString *dump = [NSMutableString string];
-    [dump appendString:@"=== LegacyUI dock hierarchy ===\n"];
+    [dump appendString:@"=== LegacyUI dock container ===\n"];
     LUIDumpView(container, dump, 0);
+
+    Class controllerClass = NSClassFromString(@"SBIconController");
+    if (controllerClass && class_getInstanceMethod(controllerClass, @selector(sharedInstance))) {
+        id shared = [controllerClass performSelector:@selector(sharedInstance)];
+        if (shared && [shared respondsToSelector:@selector(contentView)]) {
+            UIView *contentView = [shared performSelector:@selector(contentView)];
+            [dump appendString:@"\n=== SBIconController contentView ===\n"];
+            LUIDumpView(contentView, dump, 0);
+        }
+    }
+
     [dump writeToFile:@"/var/mobile/legacyui_dump.txt"
            atomically:YES encoding:NSUTF8StringEncoding error:NULL];
     [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/.legacyui_dump" error:NULL];
@@ -113,6 +124,46 @@ static CGRect LUIIOS6IconUnionFrame(UIView *iconList) {
     return CGRectOffset(unionRect, iconList.frame.origin.x, iconList.frame.origin.y);
 }
 
+// iOS 6: dock icon reflections are plain UIImageViews that extend far below
+// the icon container (dump-verified: frame {0,53},{59,62} in a 74pt container).
+// The actual icon graphic is SBIconImageView — never touched.
+static void LUIIOS6SetReflectionsHidden(UIView *view, BOOL hide) {
+    for (UIView *sub in view.subviews) {
+        if ([sub isKindOfClass:[UIImageView class]] &&
+            ![NSStringFromClass([sub class]) hasPrefix:@"SBIcon"]) {
+            CGFloat overflow = sub.frame.origin.y + sub.frame.size.height
+                               - view.bounds.size.height;
+            if (overflow > 10.0) {
+                sub.hidden = hide;
+            }
+        }
+        LUIIOS6SetReflectionsHidden(sub, hide);
+    }
+}
+
+// iOS 6: the native dock bar lives in SBIconController's contentView, behind
+// the dock container. Hide bottom-anchored wide views that are not ancestors
+// of the container and not the icon scroll view.
+static void LUIIOS6SetNativeDockBarHidden(UIView *container, BOOL hide) {
+    Class controllerClass = NSClassFromString(@"SBIconController");
+    if (!controllerClass || !class_getInstanceMethod(controllerClass, @selector(sharedInstance))) return;
+    id shared = [controllerClass performSelector:@selector(sharedInstance)];
+    if (![shared respondsToSelector:@selector(contentView)]) return;
+    UIView *contentView = [shared performSelector:@selector(contentView)];
+    if (![contentView isKindOfClass:[UIView class]]) return;
+
+    for (UIView *sub in contentView.subviews) {
+        if (container && [container isDescendantOfView:sub]) continue;
+        if ([NSStringFromClass([sub class]) rangeOfString:@"ScrollView"].location != NSNotFound) continue;
+        BOOL bottomAnchored = sub.frame.origin.y + sub.frame.size.height
+                              >= contentView.bounds.size.height - 4.0;
+        BOOL wide = sub.frame.size.width >= contentView.bounds.size.width * 0.6;
+        if (bottomAnchored && wide) {
+            sub.hidden = hide;
+        }
+    }
+}
+
 static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds) {
     CUIDockView *glass = objc_getAssociatedObject(hostView, &kDockGlassAssociationKey);
 
@@ -124,6 +175,9 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
             LUIDockSetLabelsHiddenRecursive(hostView, NO);
             if (hideIvarBackgrounds) {
                 LUIDockSetBackgroundsHidden(hostView, NO, YES);
+            } else {
+                LUIIOS6SetReflectionsHidden(hostView, NO);
+                LUIIOS6SetNativeDockBarHidden(hostView, NO);
             }
         }
         return;
@@ -157,14 +211,16 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         LUIDockClearDrawableLayers(hostView);
         if (iconList) {
             LUIDockClearDrawableLayers(iconList);
-            // Extra safety: hide any image views nested inside the icon list
+            // Hide any image views nested inside the icon list
             // (icons themselves are SBIconView, not UIImageView).
             for (UIView *sub in iconList.subviews) {
                 if ([sub isKindOfClass:[UIImageView class]]) {
                     sub.hidden = YES;
                 }
             }
+            LUIIOS6SetReflectionsHidden(iconList, YES);
         }
+        LUIIOS6SetNativeDockBarHidden(hostView, YES);
 
         if (iconList) {
             CGRect unionRect = LUIIOS6IconUnionFrame(iconList);

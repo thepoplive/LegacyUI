@@ -30,8 +30,10 @@ static void LUIIOS6SetMediaVolume(id shared, float volume) {
 }
 
 static dispatch_once_t g_hudSwizzleOnce;
+static dispatch_once_t g_progressSwizzleOnce;
 static IMP g_origPresentHUD = NULL;
 static IMP g_origPresentHUDAuto = NULL;
+static IMP g_origSetProgress = NULL;
 
 static BOOL LUIVolumeWanted() {
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
@@ -91,6 +93,37 @@ static void LUIPresentHUDAutoSwizzled(id self, SEL _cmd, id hudView, double dela
     if (!suppress && g_origPresentHUDAuto) {
         ((void (*)(id, SEL, id, double))g_origPresentHUDAuto)(self, _cmd, hudView, delay);
     }
+}
+
+// Verified: SBVolumeHUDView -setProgress:(float) exists on iOS 6.1 and 8.x.
+// SpringBoard reuses the HUD view and only calls setProgress: on subsequent
+// hardware volume presses, so this drives live pill updates.
+static void LUIProgressSwizzled(id self, SEL _cmd, float progress) {
+    if (g_origSetProgress) {
+        ((void (*)(id, SEL, float))g_origSetProgress)(self, _cmd, progress);
+    }
+    if (LUIVolumeWanted()) {
+        [[CUIVolumeController sharedInstance] presentVolumeProgress:progress];
+    }
+}
+
+static void LUISwizzleVolumeProgress() {
+    dispatch_once(&g_progressSwizzleOnce, ^{
+        Class volumeClass = NSClassFromString(@"SBVolumeHUDView");
+        if (!volumeClass) return;
+        Method method = class_getInstanceMethod(volumeClass, @selector(setProgress:));
+        if (!method) {
+            NSLog(@"[LegacyUI] SBVolumeHUDView setProgress: unsupported");
+            return;
+        }
+        if (class_addMethod(volumeClass, @selector(setProgress:),
+                            (IMP)LUIProgressSwizzled, method_getTypeEncoding(method))) {
+            g_origSetProgress = method_getImplementation(method);
+        } else {
+            g_origSetProgress = method_setImplementation(method, (IMP)LUIProgressSwizzled);
+        }
+        NSLog(@"[LegacyUI] SBVolumeHUDView setProgress: swizzled");
+    });
 }
 
 static void LUISwizzleHUDController() {
@@ -154,6 +187,7 @@ static void LUISwizzleHUDController() {
 
 - (void)activate {
     LUISwizzleHUDController();
+    LUISwizzleVolumeProgress();
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
     if (config.enabled && config.volumeHUDEnabled && config.volumePillEnabled) {
         // iOS 6 reads volume through VolumeControl; iOS 8 uses the MPVolumeView slider.
@@ -270,6 +304,15 @@ static void LUISwizzleHUDController() {
     [self presentPill:^(CUIVolumePillView *pill) {
         [pill configureAsVolume];
         pill.volumeLevel = _currentVolume;
+    }];
+}
+
+- (void)presentVolumeProgress:(float)progress {
+    if (progress < 0.0f || progress > 1.0f) return;
+    _currentVolume = progress;
+    [self presentPill:^(CUIVolumePillView *pill) {
+        [pill configureAsVolume];
+        pill.volumeLevel = progress;
     }];
 }
 

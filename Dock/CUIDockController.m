@@ -32,17 +32,6 @@ static UIView *LUIDockIvarView(id view, NSString *ivarName) {
     return nil;
 }
 
-static void LUIHideViewIfBackground(UIView *sub, UIView *glass) {
-    if (sub == glass) return;
-    if ([sub isKindOfClass:[UIImageView class]]) {
-        sub.hidden = YES;
-        return;
-    }
-    if ([NSStringFromClass([sub class]) rangeOfString:@"Background"].location != NSNotFound) {
-        sub.hidden = YES;
-    }
-}
-
 static void LUIDockSetBackgroundsHidden(UIView *hostView, BOOL hidden, BOOL useIvars) {
     if (!hidden) {
         if (useIvars) {
@@ -76,6 +65,29 @@ static UIView *LUIDockFindIconList(UIView *hostView) {
     return nil;
 }
 
+// Debug helper: /var/mobile/.legacyui_dump -> write dock hierarchy for on-device diagnosis.
+static void LUIDumpView(UIView *view, NSMutableString *out, int depth) {
+    for (int i = 0; i < depth; i++) [out appendString:@"  "];
+    [out appendFormat:@"%@ frame=%@ alpha=%.2f hidden=%d\n",
+        NSStringFromClass([view class]),
+        NSStringFromCGRect(view.frame),
+        view.alpha, view.hidden];
+    for (UIView *sub in view.subviews) {
+        LUIDumpView(sub, out, depth + 1);
+    }
+}
+
+static void LUIDockMaybeDumpHierarchy(UIView *container) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:@"/var/mobile/.legacyui_dump"]) return;
+    NSMutableString *dump = [NSMutableString string];
+    [dump appendString:@"=== LegacyUI dock hierarchy ===\n"];
+    LUIDumpView(container, dump, 0);
+    [dump writeToFile:@"/var/mobile/legacyui_dump.txt"
+           atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/.legacyui_dump" error:NULL];
+    NSLog(@"[LegacyUI] hierarchy dumped");
+}
+
 static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds) {
     CUIDockView *glass = objc_getAssociatedObject(hostView, &kDockGlassAssociationKey);
 
@@ -92,31 +104,44 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         return;
     }
 
+    LUIDockMaybeDumpHierarchy(hostView);
+
+    UIView *iconList = LUIDockFindIconList(hostView);
+
     if (hideIvarBackgrounds) {
-        // iOS 8 path: verified ivars.
+        // iOS 8 path: hide via verified ivars.
         NSArray *backgroundIvars = @[ @"_backgroundView", @"_backgroundImageView", @"_accessibilityBackgroundView" ];
         for (NSString *ivarName in backgroundIvars) {
             UIView *view = LUIDockIvarView(hostView, ivarName);
             if (view) view.hidden = YES;
         }
-    } else {
-        // iOS 6 path: hide native gradient backgrounds structurally.
+    } else if (iconList) {
+        // iOS 6 path: the container is dedicated to the dock, hide everything
+        // that is not the icon list and not our glass.
         for (UIView *sub in hostView.subviews) {
-            LUIHideViewIfBackground(sub, glass);
+            if (sub == glass || sub == iconList) continue;
+            sub.hidden = YES;
         }
     }
 
     LUIDockSetLabelsHiddenRecursive(hostView, YES);
 
-    // Center the icon list inside the host view.
-    UIView *iconList = LUIDockFindIconList(hostView);
-    if (iconList && iconList.superview == hostView) {
-        iconList.center = CGPointMake(hostView.bounds.size.width / 2.0,
-                                      hostView.bounds.size.height / 2.0);
+    // iOS 8: center icons; iOS 6: glass wraps the icon list frame instead.
+    CGRect glassFrame;
+    if (hideIvarBackgrounds) {
+        if (iconList && iconList.superview == hostView) {
+            iconList.center = CGPointMake(hostView.bounds.size.width / 2.0,
+                                          hostView.bounds.size.height / 2.0);
+        }
+        glassFrame = CGRectInset(hostView.bounds, 5, 3);
+    } else if (iconList) {
+        glassFrame = CGRectInset(iconList.frame, -10, -8);
+    } else {
+        glassFrame = CGRectInset(hostView.bounds, 5, 3);
     }
 
     if (!glass) {
-        glass = [[CUIDockView alloc] initWithFrame:CGRectInset(hostView.bounds, 5, 3)];
+        glass = [[CUIDockView alloc] initWithFrame:glassFrame];
 
         if (iconList) {
             [hostView insertSubview:glass belowSubview:iconList];
@@ -131,7 +156,7 @@ static void LUIDockUpdateGlassInView(UIView *hostView, BOOL hideIvarBackgrounds)
         NSLog(@"[LegacyUI] Dock glass installed (%@)", NSStringFromClass([hostView class]));
     }
 
-    glass.frame = CGRectInset(hostView.bounds, 5, 3);
+    glass.frame = glassFrame;
 }
 
 #pragma mark - iOS 8: SBDockView layoutSubviews

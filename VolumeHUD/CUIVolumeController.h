@@ -8,6 +8,7 @@
 - (void)deactivate;
 - (void)showVolumePill;
 - (void)showMutePillSilent:(BOOL)silent;
+- (void)presentVolumeProgress:(float)progress;
 - (void)hideVolumePill;
 - (void)updateVolume:(float)volume;
 

@@ -45,12 +45,14 @@
         _titleLabel.font = [UIFont systemFontOfSize:12];
         _titleLabel.textColor = [UIColor colorWithWhite:1.0 alpha:0.8];
         _titleLabel.textAlignment = NSTextAlignmentCenter;
+        _titleLabel.backgroundColor = [UIColor clearColor]; // iOS 6 default is opaque white
         [_contentView addSubview:_titleLabel];
 
         _subtitleLabel = [[UILabel alloc] init];
         _subtitleLabel.font = [UIFont systemFontOfSize:13];
         _subtitleLabel.textColor = [UIColor whiteColor];
         _subtitleLabel.textAlignment = NSTextAlignmentCenter;
+        _subtitleLabel.backgroundColor = [UIColor clearColor]; // iOS 6 default is opaque white
         _subtitleLabel.hidden = YES;
         [_contentView addSubview:_subtitleLabel];
 

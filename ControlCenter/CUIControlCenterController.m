@@ -107,6 +107,8 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     CUICCTrace([NSString stringWithFormat:@"installGrabber: host=%@ bounds=%@",
                 NSStringFromClass([hostView class]), NSStringFromCGRect(hostView.bounds)]);
 
+    [self dumpWindowHierarchyIfNeeded:hostView];
+
     _grabber = [CUIControlCenterGrabber attachToView:hostView];
     _grabber.triggerHeight = 300.0;
     _grabber.onGestureStart = ^{
@@ -159,6 +161,31 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
 
 - (BOOL)isOpen {
     return _open;
+}
+
+- (void)dumpWindowHierarchyIfNeeded:(UIView *)view {
+    NSString *marker = @"/var/mobile/.legacyui_cc_dump";
+    if (![[NSFileManager defaultManager] fileExistsAtPath:marker]) return;
+
+    UIView *root = view;
+    while (root.superview) root = root.superview;
+
+    NSMutableString *dump = [NSMutableString string];
+    [dump appendFormat:@"=== root: %@ frame=%@ ===\n",
+        NSStringFromClass([root class]), NSStringFromCGRect(root.frame)];
+
+    // -recursiveDescription is a private but ever-present UIView method.
+    if ([root respondsToSelector:@selector(recursiveDescription)]) {
+        NSString *recursive = [root performSelector:@selector(recursiveDescription)];
+        [dump appendString:recursive];
+    } else {
+        [dump appendString:@"recursiveDescription unavailable"];
+    }
+
+    [dump writeToFile:@"/var/mobile/legacyui_cc_dump.txt"
+           atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:marker error:NULL];
+    CUICCTrace(@"window hierarchy dumped");
 }
 
 - (void)ensurePanelInView:(UIView *)hostView {

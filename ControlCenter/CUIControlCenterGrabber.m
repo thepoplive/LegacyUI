@@ -22,26 +22,43 @@
 }
 
 + (instancetype)attachToView:(UIView *)hostView {
+    // Prefer the window itself: guaranteed top of the home screen stack.
+    UIView *host = hostView.window;
+    if (!host) host = hostView;
+
     CUIControlCenterGrabber *grabber = [[CUIControlCenterGrabber alloc]
         initWithFrame:CGRectMake(0, 0, 320, 16)];
     grabber.backgroundColor = [UIColor clearColor];
 
-    // Position strictly in screen coordinates: the SpringBoard content view
-    // can be taller than the screen (dock slides in from below its bounds).
+    // Position strictly in screen coordinates.
     CGRect screenStrip = CGRectMake(0, [UIScreen mainScreen].bounds.size.height - 16.0,
                                     [UIScreen mainScreen].bounds.size.width, 16.0);
-    CGRect frameInHost = [hostView convertRect:screenStrip fromView:nil];
+    CGRect frameInHost = [host convertRect:screenStrip fromView:nil];
     grabber.frame = frameInHost;
     grabber.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
-    [hostView addSubview:grabber];
+
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:grabber
+                                                                           action:@selector(tapOpen)];
+    [grabber addGestureRecognizer:tap];
+
+    [host addSubview:grabber];
 
     [(CUIControlCenterGrabber *)grabber trace:[NSString stringWithFormat:
         @"grabber attached host=%@ hostBounds=%@ frame=%@",
-        NSStringFromClass([hostView class]),
-        NSStringFromCGRect(hostView.bounds),
+        NSStringFromClass([host class]),
+        NSStringFromCGRect(host.bounds),
         NSStringFromCGRect(grabber.frame)]];
 
     return grabber;
+}
+
+- (void)tapOpen {
+    [self trace:@"tap on strip"];
+    _tracking = YES;
+    _startY = 0;
+    _lastY = -300.0;
+    _velocity = 0;
+    [self finish];
 }
 
 #pragma mark - Touches

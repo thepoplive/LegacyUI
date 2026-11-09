@@ -76,7 +76,7 @@ static void CUICCPresentSwizzled(id self, SEL _cmd, BOOL animated) {
 
 static void CUICCPresentCompletionSwizzled(id self, SEL _cmd, BOOL animated, id completion) {
     [[CUIControlCenterController sharedInstance] openControlCenter];
-    if (completion) ((void (*)(id))completion)(completion);
+    if (completion) ((void (^)(void))completion)();
 }
 
 static void CUICCSuppressNativeCC() {

@@ -238,12 +238,9 @@ static UIImageView *CUIIOS8ButtonPlate(UIControl *button) {
 }
 
 // Restyle one button: swap the plate image ONLY (idempotent — safe inside
-// the layout pass, proven stable in 0.4.2). The glyph reorder is once per
-// button and deferred. Glow lives in the setSelected: swizzle (once per
-// actual state change) — assigning shadow paths on every layout pass is
-// what watchdog-killed SpringBoard (120s hang, on-device stacks).
-static char kIOS8CCOrderKey;
-
+// the layout pass, proven stable in 0.4.2). NO subview mutation and NO
+// dispatch here: the on-device watchdog stacks show a dispatch_async issued
+// from inside the CA commit phase never converging (120s hang, safe mode).
 static void CUIIOS8StyleButton(UIControl *button) {
     static Class buttonClass = NULL;
     static dispatch_once_t once;
@@ -253,23 +250,27 @@ static void CUIIOS8StyleButton(UIControl *button) {
     UIImageView *plate = CUIIOS8ButtonPlate(button);
     if (!plate) return;
 
-    if (!objc_getAssociatedObject(button, &kIOS8CCOrderKey)) {
-        objc_setAssociatedObject(button, &kIOS8CCOrderKey, @YES,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIImageView *plateNow = CUIIOS8ButtonPlate(button);
-            if (!plateNow) return;
-            for (UIView *sub in button.subviews) {
-                if (sub != plateNow) [button bringSubviewToFront:sub];
-            }
-        });
-    }
-
     NSUInteger state = 0;
     if (button.selected) state |= UIControlStateSelected;
     if (button.highlighted) state |= UIControlStateHighlighted;
     UIImage *styled = CUIIOS8CachedCircle(button.bounds.size, state);
     if (styled && plate.image != styled) plate.image = styled;
+}
+
+// Glyph above plate — called ONLY from the state swizzles (event phase,
+// outside any layout/commit), once per button. Mutating subview order from
+// inside layoutSubviews or a dispatch block is what hung SpringBoard.
+static char kIOS8CCOrderKey;
+
+static void CUIIOS8ReorderGlyphOnce(UIControl *button) {
+    if (objc_getAssociatedObject(button, &kIOS8CCOrderKey)) return;
+    objc_setAssociatedObject(button, &kIOS8CCOrderKey, @YES,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UIImageView *plate = CUIIOS8ButtonPlate(button);
+    if (!plate) return;
+    for (UIView *sub in button.subviews) {
+        if (sub != plate) [button bringSubviewToFront:sub];
+    }
 }
 
 // Soft violet glow around active circles — applied ONLY on real state
@@ -303,6 +304,7 @@ static void CUIIOS8SetSelectedSwizzled(id self, SEL _cmd, BOOL selected) {
     }
     if (!CUIIOS8CCWanted()) return;
     UIControl *button = (UIControl *)self;
+    CUIIOS8ReorderGlyphOnce(button); // event phase: safe to touch the tree
     CUIIOS8StyleButton(button);
     if (was != selected) {
         CUIIOS8ApplyGlow(button, selected);
@@ -325,9 +327,10 @@ static void CUIIOS8SetHighlightedSwizzled(id self, SEL _cmd, BOOL highlighted) {
     if (g_origSetHighlighted) {
         ((void (*)(id, SEL, BOOL))g_origSetHighlighted)(self, _cmd, highlighted);
     }
-    if (CUIIOS8CCWanted()) {
-        CUIIOS8StyleButton((UIControl *)self); // image swap only, idempotent
-    }
+    if (!CUIIOS8CCWanted()) return;
+    UIControl *button = (UIControl *)self;
+    CUIIOS8ReorderGlyphOnce(button); // event phase: safe
+    CUIIOS8StyleButton(button); // image swap only, idempotent
 }
 
 #pragma mark - Panel glass overlay

@@ -254,7 +254,7 @@ static void CUIIOS8EnsureBackdrop(UIControl *button) {
             id alloc = [backdropClass alloc];
             if (settings && alloc &&
                 [alloc respondsToSelector:@selector(initWithFrame:autosizesToFitSuperview:settings:)]) {
-                backdrop = ((id<CUIIOS8BackdropView>)alloc)
+                backdrop = [((id<CUIIOS8BackdropView>)alloc)
                     initWithFrame:button.bounds
                     autosizesToFitSuperview:YES
                     settings:settings];

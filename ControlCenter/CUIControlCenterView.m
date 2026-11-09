@@ -949,8 +949,27 @@ static NSArray *CUIPagesConfig(void) {
 
 #pragma mark Progress / animation
 
+static void CUIDumpView(UIView *view, NSMutableString *out, int depth) {
+    for (int i = 0; i < depth; i++) [out appendString:@"  "];
+    [out appendFormat:@"%@ frame=%@ alpha=%.2f hidden=%d tag=%ld\n",
+        NSStringFromClass([view class]), NSStringFromCGRect(view.frame),
+        view.alpha, view.hidden, (long)view.tag];
+    for (UIView *sub in view.subviews) CUIDumpView(sub, out, depth + 1);
+}
+
 - (void)prepareForOpen {
     self.hidden = NO;
+    static BOOL dumped = NO;
+    if (!dumped) {
+        dumped = YES;
+        NSMutableString *out = [NSMutableString string];
+        [out appendFormat:@"window=%@ level=%.1f selfFrame=%@ hidden=%d\n",
+            NSStringFromClass([self.window class]), self.window.windowLevel,
+            NSStringFromCGRect(self.frame), self.hidden];
+        CUIDumpView(self, out, 1);
+        [out writeToFile:@"/var/mobile/legacyui_panel.txt"
+              atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    }
 }
 
 - (void)setOpenProgress:(float)progress {

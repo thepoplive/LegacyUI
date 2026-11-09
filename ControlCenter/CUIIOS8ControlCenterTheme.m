@@ -237,14 +237,11 @@ static UIImageView *CUIIOS8ButtonPlate(UIControl *button) {
     return nil;
 }
 
-// Restyle one button: swap the plate image, keep the glyph ON TOP of the
-// plate (native order is glyph-below-plate — the bug that hid the icons),
-// and drive a soft outer glow through the button layer shadow.
-//
-// CRITICAL: never reorder subviews synchronously here — StyleButton runs
-// inside layoutSubviews, and mutating subview order during a layout pass
-// loops SpringBoard's layout engine into a watchdog kill (safe mode).
-// The reorder is once-per-button and deferred to the next runloop tick.
+// Restyle one button: swap the plate image ONLY (idempotent — safe inside
+// the layout pass, proven stable in 0.4.2). The glyph reorder is once per
+// button and deferred. Glow lives in the setSelected: swizzle (once per
+// actual state change) — assigning shadow paths on every layout pass is
+// what watchdog-killed SpringBoard (120s hang, on-device stacks).
 static char kIOS8CCOrderKey;
 
 static void CUIIOS8StyleButton(UIControl *button) {
@@ -273,12 +270,15 @@ static void CUIIOS8StyleButton(UIControl *button) {
     if (button.highlighted) state |= UIControlStateHighlighted;
     UIImage *styled = CUIIOS8CachedCircle(button.bounds.size, state);
     if (styled && plate.image != styled) plate.image = styled;
+}
 
-    // Soft violet glow around active circles (unclipped, real shadow).
+// Soft violet glow around active circles — applied ONLY on real state
+// transitions, never from a layout pass.
+static void CUIIOS8ApplyGlow(UIControl *button, BOOL active) {
     button.layer.shadowColor = IOS8_CC_ACCENT.CGColor;
     button.layer.shadowRadius = 9.0;
     button.layer.shadowOffset = CGSizeZero;
-    button.layer.shadowOpacity = button.selected ? 0.45 : 0.0;
+    button.layer.shadowOpacity = active ? 0.45 : 0.0;
     button.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:
         CGRectInset(button.bounds, 2.0, 2.0)].CGPath;
 }
@@ -292,76 +292,7 @@ static void CUIIOS8StyleButtonsInTree(UIView *view) {
     }
 }
 
-#pragma mark Liquid interaction: spring press + fill from the tap point
-
-static char kIOS8CCTapPointKey;
-
-static IMP g_origTouchesBegan = NULL;
-
-static void CUIIOS8TouchesBeganSwizzled(id self, SEL _cmd, NSSet *touches, UIEvent *event) {
-    if (g_origTouchesBegan) {
-        ((void (*)(id, SEL, NSSet *, UIEvent *))g_origTouchesBegan)(self, _cmd, touches, event);
-    }
-    UITouch *touch = [touches anyObject];
-    if (touch) {
-        objc_setAssociatedObject(self, &kIOS8CCTapPointKey,
-            [NSValue valueWithCGPoint:[touch locationInView:(UIView *)self]],
-            OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-}
-
-static void CUIIOS8SpringButton(UIControl *button, CGFloat scale, CGFloat velocity) {
-    [UIView animateWithDuration:0.38
-                          delay:0.0
-         usingSpringWithDamping:0.52
-          initialSpringVelocity:velocity
-                        options:UIViewAnimationOptionAllowUserInteraction |
-                                UIViewAnimationOptionBeginFromCurrentState
-                     animations:^{
-        button.transform = CGAffineTransformMakeScale(scale, scale);
-    } completion:nil];
-}
-
-// An expanding violet disc from the tap point inside the plate — reads as
-// the liquid "filling" from where the finger landed. Path interpolation
-// (not transform scaling) so the disc truly grows around the tap point.
-static UIBezierPath *CUIIOS8DiscPath(CGPoint origin, CGFloat radius) {
-    return [UIBezierPath bezierPathWithOvalInRect:
-        CGRectMake(origin.x - radius, origin.y - radius, radius * 2, radius * 2)];
-}
-
-static void CUIIOS8RippleFill(UIControl *button) {
-    UIImageView *plate = CUIIOS8ButtonPlate(button);
-    if (!plate) return;
-
-    NSValue *pointValue = objc_getAssociatedObject(button, &kIOS8CCTapPointKey);
-    CGPoint origin = pointValue
-        ? [pointValue CGPointValue]
-        : CGPointMake(plate.bounds.size.width / 2.0, plate.bounds.size.height / 2.0);
-
-    CGFloat startRadius = plate.bounds.size.width * 0.10;
-    CGFloat maxDx = MAX(origin.x, plate.bounds.size.width - origin.x);
-    CGFloat maxDy = MAX(origin.y, plate.bounds.size.height - origin.y);
-    CGFloat endRadius = sqrtf(maxDx * maxDx + maxDy * maxDy) * 1.10;
-
-    CAShapeLayer *ripple = [CAShapeLayer layer];
-    ripple.path = CUIIOS8DiscPath(origin, endRadius).CGPath; // model value
-    ripple.fillColor = [IOS8_CC_ACTIVE_B colorWithAlphaComponent:0.92].CGColor;
-    [plate.layer addSublayer:ripple];
-
-    CABasicAnimation *growAnim = [CABasicAnimation animationWithKeyPath:@"path"];
-    growAnim.fromValue = (__bridge id)CUIIOS8DiscPath(origin, startRadius).CGPath;
-    growAnim.toValue = (__bridge id)CUIIOS8DiscPath(origin, endRadius).CGPath;
-    growAnim.duration = 0.32;
-    growAnim.timingFunction = [CAMediaTimingFunction functionWithName:
-        kCAMediaTimingFunctionEaseOut];
-    [ripple addAnimation:growAnim forKey:@"grow"];
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.42 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        [ripple removeFromSuperlayer];
-    });
-}
+#pragma mark State swizzles (stable subset)
 
 static IMP g_origSetSelected = NULL;
 
@@ -371,17 +302,20 @@ static void CUIIOS8SetSelectedSwizzled(id self, SEL _cmd, BOOL selected) {
         ((void (*)(id, SEL, BOOL))g_origSetSelected)(self, _cmd, selected);
     }
     if (!CUIIOS8CCWanted()) return;
-    CUIIOS8StyleButton((UIControl *)self);
-    if (was != selected && selected) {
-        // Glow pulse on activation.
-        UIControl *button = (UIControl *)self;
-        CABasicAnimation *pulse = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
-        pulse.fromValue = @0.85;
-        pulse.toValue = @0.45;
-        pulse.duration = 0.5;
-        pulse.timingFunction = [CAMediaTimingFunction functionWithName:
-            kCAMediaTimingFunctionEaseOut];
-        [button.layer addAnimation:pulse forKey:@"glowPulse"];
+    UIControl *button = (UIControl *)self;
+    CUIIOS8StyleButton(button);
+    if (was != selected) {
+        CUIIOS8ApplyGlow(button, selected);
+        if (selected) {
+            // One-shot glow pulse on activation.
+            CABasicAnimation *pulse = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
+            pulse.fromValue = @0.85;
+            pulse.toValue = @0.45;
+            pulse.duration = 0.5;
+            pulse.timingFunction = [CAMediaTimingFunction functionWithName:
+                kCAMediaTimingFunctionEaseOut];
+            [button.layer addAnimation:pulse forKey:@"glowPulse"];
+        }
     }
 }
 
@@ -391,14 +325,8 @@ static void CUIIOS8SetHighlightedSwizzled(id self, SEL _cmd, BOOL highlighted) {
     if (g_origSetHighlighted) {
         ((void (*)(id, SEL, BOOL))g_origSetHighlighted)(self, _cmd, highlighted);
     }
-    if (!CUIIOS8CCWanted()) return;
-    UIControl *button = (UIControl *)self;
-    if (highlighted) {
-        CUIIOS8SpringButton(button, 0.88, 0.7);
-        CUIIOS8RippleFill(button);
-    } else {
-        CUIIOS8SpringButton(button, 1.0, 0.8);
-        CUIIOS8StyleButton(button); // settle the final plate state
+    if (CUIIOS8CCWanted()) {
+        CUIIOS8StyleButton((UIControl *)self); // image swap only, idempotent
     }
 }
 
@@ -478,13 +406,9 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     borderMask.path = path.CGPath;
     border.layer.mask = borderMask;
 
-    // Catch-all for freshly created buttons — deferred out of the layout
-    // pass: touching subviews/images synchronously in layoutSubviews looped
-    // the layout engine (watchdog kill, safe mode on device).
-    __weak UIView *weakPanel = panel;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        CUIIOS8StyleButtonsInTree(weakPanel);
-    });
+    // Catch-all for freshly created buttons: image swaps only, fully
+    // idempotent — synchronous like the proven-stable 0.4.2 pass.
+    CUIIOS8StyleButtonsInTree(panel);
 }
 
 #pragma mark - Install
@@ -524,17 +448,14 @@ void CUIIOS8InstallControlCenterTheme(void) {
                                       (IMP)CUIIOS8TileBGSwizzled, &g_origTileBG);
         }
 
-        // iOS 8.4.1 path: plate swap + liquid interaction.
+        // iOS 8.4.1 path: plate swap + glow on real state changes.
         Class ccButtonClass = NSClassFromString(@"SBControlCenterButton");
         if (ccButtonClass) {
             CUIIOS8SwizzleMethod(ccButtonClass, @selector(setSelected:),
                                  (IMP)CUIIOS8SetSelectedSwizzled, &g_origSetSelected);
             CUIIOS8SwizzleMethod(ccButtonClass, @selector(setHighlighted:),
                                  (IMP)CUIIOS8SetHighlightedSwizzled, &g_origSetHighlighted);
-            CUIIOS8SwizzleMethod(ccButtonClass,
-                                 @selector(touchesBegan:withEvent:),
-                                 (IMP)CUIIOS8TouchesBeganSwizzled, &g_origTouchesBegan);
-            NSLog(@"[LegacyUI] SBControlCenterButton liquid hooks installed");
+            NSLog(@"[LegacyUI] SBControlCenterButton state swizzles installed");
         }
 
         Class panelClass = NSClassFromString(@"SBControlCenterContentContainerView");

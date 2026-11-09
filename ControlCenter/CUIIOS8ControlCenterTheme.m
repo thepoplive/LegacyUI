@@ -24,6 +24,39 @@ static BOOL CUIIOS8CCWanted() {
 
 #pragma mark - Image factories
 
+// Liquid glass look built ONLY from the primitives proven stable on-device
+// (0.4.2/0.4.8): CGContextFillEllipseInRect, CGContextStrokeEllipseInRect,
+// CGContextSetShadowWithColor. NO CGGradient objects — creating gradients
+// inside the layout-pass render pipeline is what watchdog-hung 8.4.1.
+// Sheen = stacked translucent ellipses, glow = shadow, core = solid lit disc.
+
+static void CUIIOS8ClipToCircle(CGContextRef ctx, CGRect circle) {
+    CGContextSaveGState(ctx);
+    CGContextAddEllipseInRect(ctx, circle);
+    CGContextClip(ctx);
+}
+
+// Fake vertical glass sheen: stacked translucent bands toward the top.
+static void CUIIOS8DrawSheen(CGContextRef ctx, CGRect circle) {
+    CUIIOS8ClipToCircle(ctx, circle);
+    CGRect band1 = CGRectMake(circle.origin.x, circle.origin.y,
+                              circle.size.width, circle.size.height * 0.55);
+    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
+    CGContextFillEllipseInRect(ctx, band1);
+    CGRect band2 = CGRectMake(circle.origin.x + circle.size.width * 0.10,
+                              circle.origin.y,
+                              circle.size.width * 0.80, circle.size.height * 0.34);
+    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
+    CGContextFillEllipseInRect(ctx, band2);
+    // Specular: hot small ellipse near the top.
+    CGRect spec = CGRectMake(CGRectGetMidX(circle) - circle.size.width * 0.26,
+                             circle.origin.y + circle.size.height * 0.12,
+                             circle.size.width * 0.52, circle.size.height * 0.20);
+    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.30].CGColor);
+    CGContextFillEllipseInRect(ctx, spec);
+    CGContextRestoreGState(ctx);
+}
+
 static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
     BOOL active = (state & UIControlStateSelected) != 0;
     BOOL highlighted = (state & UIControlStateHighlighted) != 0;
@@ -36,15 +69,34 @@ static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
     CGRect circle = CGRectInset(r, inset, inset);
 
     if (active) {
-        // Soft outer glow baked into the padding.
+        // Soft outer glow baked into the padding (proven-stable shadow path).
         CGContextSetShadowWithColor(ctx, CGSizeZero, size.width * 0.10,
                                     [IOS8_CC_ACCENT colorWithAlphaComponent:0.55].CGColor);
         CGContextSetFillColorWithColor(ctx, IOS8_CC_ACTIVE.CGColor);
         CGContextFillEllipseInRect(ctx, circle);
         CGContextSetShadowWithColor(ctx, CGSizeZero, 0, nil);
+
+        // Lit core: translucent lighter disc above center -> radial feel.
+        CUIIOS8ClipToCircle(ctx, circle);
+        CGRect core = CGRectMake(CGRectGetMidX(circle) - circle.size.width * 0.30,
+                                 circle.origin.y + circle.size.height * 0.16,
+                                 circle.size.width * 0.60, circle.size.height * 0.52);
+        CGContextSetFillColorWithColor(ctx,
+            [IOS8_CC_ACTIVE colorWithAlphaComponent:0.55].CGColor);
+        CGContextFillEllipseInRect(ctx, core);
+        // Inner luminous ring.
+        CGContextSetStrokeColorWithColor(ctx,
+            [IOS8_CC_ACCENT colorWithAlphaComponent:0.30].CGColor);
+        CGContextSetLineWidth(ctx, circle.size.width * 0.09);
+        CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
+            circle.size.width * 0.055, circle.size.height * 0.055));
+        CGContextRestoreGState(ctx);
+
+        CUIIOS8DrawSheen(ctx, circle);
     } else {
         CGContextSetFillColorWithColor(ctx, IOS8_CC_IDLE.CGColor);
         CGContextFillEllipseInRect(ctx, circle);
+        CUIIOS8DrawSheen(ctx, circle);
     }
 
     if (highlighted) {

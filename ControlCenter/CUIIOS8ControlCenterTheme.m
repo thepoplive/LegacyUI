@@ -233,6 +233,13 @@ static UIImage *CUIIOS8CachedCircle(CGSize size, NSUInteger state) {
 // AdaptiveLight — AppleWiki: "Control Center"), circle-masked. The blur is
 // computed by the render server (CABackdropLayer + gaussianBlur), which is
 // what makes it read as real glass instead of a painted imitation.
+// Typed declaration so ARC/clang accept the private initializer.
+@protocol CUIIOS8BackdropView
+- (instancetype)initWithFrame:(CGRect)frame
+      autosizesToFitSuperview:(BOOL)autosizes
+                     settings:(id)settings;
+@end
+
 static char kIOS8CCBackdropKey;
 
 static void CUIIOS8EnsureBackdrop(UIControl *button) {
@@ -244,8 +251,10 @@ static void CUIIOS8EnsureBackdrop(UIControl *button) {
             [settingsClass respondsToSelector:@selector(settingsForStyle:)]) {
             id settings = ((id (*)(Class, SEL, long))objc_msgSend)(
                 settingsClass, @selector(settingsForStyle:), 2060L);
-            if (settings) {
-                backdrop = [[backdropClass alloc]
+            id alloc = [backdropClass alloc];
+            if (settings && alloc &&
+                [alloc respondsToSelector:@selector(initWithFrame:autosizesToFitSuperview:settings:)]) {
+                backdrop = ((id<CUIIOS8BackdropView>)alloc)
                     initWithFrame:button.bounds
                     autosizesToFitSuperview:YES
                     settings:settings];

@@ -99,7 +99,8 @@ static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
         // Soft outer glow baked into the padding (proven-stable shadow path).
         CGContextSetShadowWithColor(ctx, CGSizeZero, size.width * 0.10,
                                     [IOS8_CC_ACCENT colorWithAlphaComponent:0.55].CGColor);
-        CUIIOS8FillEllipse(ctx, circle, IOS8_CC_ACTIVE.CGColor);
+        CUIIOS8FillEllipse(ctx, circle,
+            [IOS8_CC_ACTIVE colorWithAlphaComponent:0.80].CGColor);
         CGContextSetShadowWithColor(ctx, CGSizeZero, 0, nil);
 
         // Lit core: translucent lighter disc above center -> lens depth.
@@ -117,9 +118,10 @@ static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
 
         CUIIOS8DrawGlassTreatment(ctx, circle, YES);
     } else {
-        // Dark glass body.
-        CUIIOS8FillEllipse(ctx, circle, IOS8_CC_IDLE.CGColor);
-        CUIIOS8FillEllipse(ctx, circle, [UIColor colorWithWhite:0.0 alpha:0.14].CGColor);
+        // Body comes from the REAL _UIBackdropView blur behind the plate —
+        // the painted image only carries the optical treatment (rims,
+        // specular, fresnel, hairline).
+        CUIIOS8FillEllipse(ctx, circle, [UIColor colorWithWhite:0.0 alpha:0.10].CGColor);
         CUIIOS8DrawGlassTreatment(ctx, circle, NO);
     }
 
@@ -227,6 +229,59 @@ static UIImage *CUIIOS8CachedCircle(CGSize size, NSUInteger state) {
     return image;
 }
 
+// Native blur plate: _UIBackdropView with the Control Center style (2060,
+// AdaptiveLight — AppleWiki: "Control Center"), circle-masked. The blur is
+// computed by the render server (CABackdropLayer + gaussianBlur), which is
+// what makes it read as real glass instead of a painted imitation.
+static char kIOS8CCBackdropKey;
+
+static void CUIIOS8EnsureBackdrop(UIControl *button) {
+    UIView *backdrop = objc_getAssociatedObject(button, &kIOS8CCBackdropKey);
+    if (!backdrop) {
+        Class settingsClass = NSClassFromString(@"_UIBackdropViewSettings");
+        Class backdropClass = NSClassFromString(@"_UIBackdropView");
+        if (settingsClass && backdropClass &&
+            [settingsClass respondsToSelector:@selector(settingsForStyle:)]) {
+            id settings = ((id (*)(Class, SEL, long))objc_msgSend)(
+                settingsClass, @selector(settingsForStyle:), 2060L);
+            if (settings) {
+                backdrop = [[backdropClass alloc]
+                    initWithFrame:button.bounds
+                    autosizesToFitSuperview:YES
+                    settings:settings];
+                if (backdrop) {
+                    backdrop.userInteractionEnabled = NO;
+                    backdrop.layer.zPosition = -2.0f;
+                    CAShapeLayer *mask = [CAShapeLayer layer];
+                    backdrop.layer.mask = mask;
+                    [button addSubview:backdrop];
+                    objc_setAssociatedObject(button, &kIOS8CCBackdropKey,
+                        backdrop, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+            }
+        }
+        if (!backdrop) {
+            // Mark as attempted so we do not retry on every layout pass.
+            objc_setAssociatedObject(button, &kIOS8CCBackdropKey,
+                [NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return; // frame/mask sync happens on the next layout pass
+    }
+    if (![backdrop isKindOfClass:[UIView class]]) return;
+
+    if (!CGRectEqualToRect(backdrop.frame, button.bounds)) {
+        backdrop.frame = button.bounds;
+    }
+    CAShapeLayer *mask = (CAShapeLayer *)backdrop.layer.mask;
+    UIBezierPath *oval = [UIBezierPath bezierPathWithOvalInRect:backdrop.bounds];
+    if (mask && ![mask isKindOfClass:[CAShapeLayer class]]) mask = nil;
+    if (!mask) {
+        mask = [CAShapeLayer layer];
+        backdrop.layer.mask = mask;
+    }
+    mask.path = oval.CGPath;
+}
+
 static void CUIIOS8StyleButton(UIControl *button) {
     static Class buttonClass = NULL;
     static dispatch_once_t once;
@@ -250,6 +305,13 @@ static void CUIIOS8StyleButton(UIControl *button) {
     // covered by the active fill, without reordering subviews (reorder +
     // dispatch variants all watchdog-hung SpringBoard on device).
     if (plate.layer.zPosition != -1.0f) plate.layer.zPosition = -1.0f;
+
+    // Real Liquid Glass body: a native _UIBackdropView (AdaptiveLight 2060
+    // — the Control Center blur style itself, per the AppleWiki dump) behind
+    // the plate. Created ONCE per button; per layout pass we only sync the
+    // frame and the circle mask path — the same writes the stable panel
+    // tint has done since 0.4.2.
+    CUIIOS8EnsureBackdrop(button);
 
     NSUInteger state = 0;
     if (button.selected) state |= UIControlStateSelected;

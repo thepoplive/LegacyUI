@@ -99,12 +99,15 @@ static void CUICCNativeCCLayoutSwizzled(id self, SEL _cmd) {
 }
 
 static IMP g_origNativeCCDismiss = NULL;
+static BOOL g_nativeDrivingClose = NO;
 
 static void CUICCNativeCCDismissSwizzled(id self, SEL _cmd) {
     if (g_origNativeCCDismiss) {
         ((void (*)(id, SEL))g_origNativeCCDismiss)(self, _cmd);
     }
+    g_nativeDrivingClose = YES;
     [[CUIControlCenterController sharedInstance] closeControlCenter];
+    g_nativeDrivingClose = NO;
 }
 
 static void CUICCInstallNativeCCHide() {
@@ -646,6 +649,16 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     _open = NO;
     g_ccIsOpen = NO;
     [_panelView closeAnimated:nil];
+
+    // If the USER closed our sheet, the invisible native CC must close too
+    // (verified selector from the 8.0 dump: -dismissAnimated:).
+    if (!g_nativeDrivingClose) {
+        Class ccClass = NSClassFromString(@"SBControlCenterController");
+        id cc = ccClass ? [ccClass performSelector:@selector(sharedInstance)] : nil;
+        if (cc && [cc respondsToSelector:@selector(dismissAnimated:)]) {
+            [cc performSelector:@selector(dismissAnimated:) withObject:@YES];
+        }
+    }
 }
 
 - (void)closeAndOpenSettings {

@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <unistd.h>
+#import <dlfcn.h>
 #import <CoreFoundation/CoreFoundation.h>
 
 #pragma mark iOS 8 native CC module drivers
@@ -405,8 +406,22 @@ static float s_lastBrightness = 0.0;
     return CUICCSharedInstanceFor(@"SBBrightnessController", @"sharedBrightnessController");
 }
 
+static float (*CUIBBSBrightnessGet)(void) = NULL;
+static void (*CUIBBSBrightnessSet)(float) = NULL;
+
 - (float)brightness {
     if (!CUIIsiOS6OrEarlier()) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            CUIBBSBrightnessGet = (float (*)(void))dlsym(RTLD_DEFAULT,
+                "BKSDisplayBrightnessGet");
+            CUIBBSBrightnessSet = (void (*)(float))dlsym(RTLD_DEFAULT,
+                "BKSDisplayBrightnessSet");
+        });
+        if (CUIBBSBrightnessGet) {
+            float value = CUIBBSBrightnessGet();
+            if (value > 0.001f && value <= 1.0f) return value;
+        }
         float value = (float)[UIScreen mainScreen].brightness;
         if (value > 0.001f) return value;
         return s_lastBrightness > 0.0f ? s_lastBrightness : 0.5f;
@@ -422,7 +437,11 @@ static float s_lastBrightness = 0.0;
 
 - (void)setBrightness:(float)level {
     if (!CUIIsiOS6OrEarlier()) {
-        [UIScreen mainScreen].brightness = level;
+        if (CUIBBSBrightnessSet) {
+            CUIBBSBrightnessSet(level);
+        } else {
+            [UIScreen mainScreen].brightness = level;
+        }
         s_lastBrightness = level;
         return;
     }
@@ -468,32 +487,64 @@ static float s_lastBrightness = 0.0;
     return CUICCSharedInstanceFor(@"SBMediaController", @"sharedInstance");
 }
 
+static void (*CUI_MRGetNowPlayingInfo)(void (^)(CFDictionaryRef)) = NULL;
+static NSDictionary *s_mrInfo = nil;
+
+// Copy helper: keeps the (often short-lived) reply dictionary alive.
+static NSDictionary *CUI_MRCopyInfo(CFTypeRef cf) {
+    if (!cf) return nil;
+    return [(__bridge id)cf copy];
+}
+
+static void CUI_MRFetchNowPlaying(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CUI_MRGetNowPlayingInfo = (void (*)(void (^)(CFDictionaryRef)))dlsym(
+            RTLD_DEFAULT, "MRMediaRemoteGetNowPlayingInfo");
+    });
+    if (!CUI_MRGetNowPlayingInfo) return;
+    CUI_MRGetNowPlayingInfo(^(CFDictionaryRef info) {
+        s_mrInfo = CUI_MRCopyInfo(info);
+    });
+}
+
 - (NSString *)mediaTitle {
     id controller = [self mediaController];
+    NSString *title = nil;
     if (CUICCResponds(controller, @"nowPlayingTitle")) {
-        return [controller performSelector:@selector(nowPlayingTitle)];
+        title = [controller performSelector:@selector(nowPlayingTitle)];
     }
-    return nil;
+    if (title.length) return title;
+    CUI_MRFetchNowPlaying();
+    return s_mrInfo[@"title"];
 }
 
 - (NSString *)mediaArtist {
     id controller = [self mediaController];
+    NSString *artist = nil;
     if (CUICCResponds(controller, @"nowPlayingArtist")) {
-        return [controller performSelector:@selector(nowPlayingArtist)];
+        artist = [controller performSelector:@selector(nowPlayingArtist)];
     }
-    return nil;
+    if (artist.length) return artist;
+    CUI_MRFetchNowPlaying();
+    return s_mrInfo[@"artist"];
 }
 
 - (BOOL)mediaPlaying {
     id controller = [self mediaController];
-    // -isPlaying verified by the on-device runtime probe (real method list).
+    // -isPlaying verified by the on-device runtime probe (real method list);
+    // MediaRemote playbackRate as the iOS 8 fallback source.
     if (CUICCResponds(controller, @"isPlaying")) {
-        return ((BOOL (*)(id, SEL))objc_msgSend)(controller, @selector(isPlaying));
+        if (((BOOL (*)(id, SEL))objc_msgSend)(controller, @selector(isPlaying"))) {
+            return YES;
+        }
     }
-    Ivar ivar = class_getInstanceVariable([controller class], "_lastNowPlayingAppIsPlaying");
-    if (!ivar) return NO;
-    void *ptr = (void *)((char *)(__bridge void *)controller + ivar_getOffset(ivar));
-    return *(BOOL *)ptr;
+    CUI_MRFetchNowPlaying();
+    id rate = s_mrInfo[@"playbackRate"];
+    if ([rate isKindOfClass:[NSNumber class]]) {
+        return [rate doubleValue] > 0.0;
+    }
+    return NO;
 }
 
 - (void)mediaTogglePlayPause {
@@ -520,14 +571,28 @@ static NSString *CUICCFormatSeconds(double seconds) {
 
 - (double)mediaTrackDuration {
     id controller = [self mediaController];
-    if (!CUICCResponds(controller, @"trackDuration")) return 0.0;
-    return ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackDuration));
+    double duration = 0.0;
+    if (CUICCResponds(controller, @"trackDuration")) {
+        duration = ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackDuration));
+    }
+    if (duration > 1.0) return duration;
+    CUI_MRFetchNowPlaying();
+    id value = s_mrInfo[@"duration"];
+    if ([value isKindOfClass:[NSNumber class]]) return [value doubleValue];
+    return 0.0;
 }
 
 - (double)mediaTrackElapsed {
     id controller = [self mediaController];
-    if (!CUICCResponds(controller, @"trackElapsedTime")) return 0.0;
-    return ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackElapsedTime));
+    double elapsed = 0.0;
+    if (CUICCResponds(controller, @"trackElapsedTime")) {
+        elapsed = ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackElapsedTime));
+    }
+    if (elapsed > 0.5) return elapsed;
+    CUI_MRFetchNowPlaying();
+    id value = s_mrInfo[@"elapsed"];
+    if ([value isKindOfClass:[NSNumber class]]) return [value doubleValue];
+    return 0.0;
 }
 
 - (float)mediaTrackProgress {

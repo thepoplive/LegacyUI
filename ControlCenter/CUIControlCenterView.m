@@ -32,6 +32,8 @@ static const CGFloat kSheetGap = 7.0;
     UIImageView *_iconView;
     UILabel *_label;
     BOOL _active;
+    CGPoint _touchStart;
+    BOOL _touchMoved;
 }
 
 - (instancetype)initWithIcon:(CUICCIcon)icon key:(NSString *)key label:(NSString *)text {
@@ -58,15 +60,9 @@ static const CGFloat kSheetGap = 7.0;
 
         [self refreshVisuals];
 
-        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
-            initWithTarget:self action:@selector(fireTap)];
-        tap.cancelsTouchesInView = NO;
-        [self addGestureRecognizer:tap];
-        UILongPressGestureRecognizer *press = [[UILongPressGestureRecognizer alloc]
-            initWithTarget:self action:@selector(pressGesture:)];
-        press.cancelsTouchesInView = NO;
-        press.minimumPressDuration = 0.0;
-        [self addGestureRecognizer:press];
+        // No gesture recognizers: a 0-duration long-press here was blocking
+        // the scroll view's pan, killing both page swiping and tile taps.
+        // Plain touches keep the scroll free (pan cancels us on move).
 
         _label.text = text;
     }
@@ -115,13 +111,28 @@ static const CGFloat kSheetGap = 7.0;
                      completion:nil];
 }
 
-- (void)pressGesture:(UILongPressGestureRecognizer *)g {
-    if (g.state == UIGestureRecognizerStateBegan) {
-        [self setPressed:YES];
-    } else if (g.state == UIGestureRecognizerStateEnded ||
-               g.state == UIGestureRecognizerStateCancelled) {
+- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
+    _touchStart = [[touches anyObject] locationInView:self];
+    _touchMoved = NO;
+    [self setPressed:YES];
+}
+
+- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
+    CGPoint p = [[touches anyObject] locationInView:self];
+    CGFloat dx = p.x - _touchStart.x, dy = p.y - _touchStart.y;
+    if (dx * dx + dy * dy > 64.0) { // 8pt
+        _touchMoved = YES;
         [self setPressed:NO];
     }
+}
+
+- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event {
+    [self setPressed:NO];
+    if (!_touchMoved) [self fireTap];
+}
+
+- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event {
+    [self setPressed:NO]; // scroll view took over
 }
 
 - (void)fireTap {

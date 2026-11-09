@@ -82,6 +82,17 @@ static void CUICCNativeCCLayoutSwizzled(id self, SEL _cmd) {
     // Native sheet: fully transparent, its machinery keeps running.
     if (container.alpha > 0.01) container.alpha = 0.0;
 
+    // The native dimming wash lives on the parent container — hide it too,
+    // our sheet brings its own dim overlay.
+    UIView *parent = container.superview;
+    Ivar darkIvar = class_getInstanceVariable([parent class], "_darkeningView");
+    if (darkIvar) {
+        id darkening = object_getIvar(parent, darkIvar);
+        if ([darkening isKindOfClass:[UIView class]] && !((UIView *)darkening).hidden) {
+            ((UIView *)darkening).hidden = YES;
+        }
+    }
+
     // Our MD3 sheet mirrors the native presentation.
     if ([[CUIControlCenterController sharedInstance] isOpen]) return;
     [[CUIControlCenterController sharedInstance] openControlCenter];
@@ -624,6 +635,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
     }
     _open = YES;
     g_ccIsOpen = YES;
+    [_panelView prepareForOpen]; // unhide: this path is called cold on iOS 8
     [self refreshStates];
     [self scheduleStateReRefresh]; // async radio/media state convergence
     [_panelView openAnimated:nil];

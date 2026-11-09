@@ -84,97 +84,76 @@ static void CUICCPresentDurationSwizzled(id self, SEL _cmd, double duration, id 
     if (completion) ((void (^)(void))completion)();
 }
 
-// Probe-verified 8.4.1 interactive path: the swipe begins with
-// -beginPresentationWithTouchLocation: (the native CC starts appearing
-// right away) and finishes with -endTransitionWithVelocity:wasCancelled:
-// completion:. The presentAnimated:/_presentWithDuration entry points are
-// NOT on this path — swallowing the begin is the only working suppression.
-static void CUICCBeginPresentationSwizzled(id self, SEL _cmd, CGPoint location) {
+// The native CC lives in an SBSecureWindow ABOVE our overlay window; the
+// 0.6.2 attempt to swallow beginPresentationWithTouchLocation: left the
+// system gesture half-engaged and the empty CC window ate ALL touches.
+// Robust approach instead: let the native CC present/dismiss NORMALLY
+// (every system state machine stays intact), make it invisible from its
+// own content-container layout pass (proven-safe write class from the
+// 0.4.x builds), and mirror open/close onto our MD3 sheet which floats
+// higher (windowLevel raised in CUIOverlayWindow).
+static IMP g_origNativeCCLayout = NULL;
+
+static void CUICCNativeCCLayoutSwizzled(id self, SEL _cmd) {
+    if (g_origNativeCCLayout) {
+        ((void (*)(id, SEL))g_origNativeCCLayout)(self, _cmd);
+    }
+    UIView *container = (UIView *)self;
+
+    // Native sheet: fully transparent, its machinery keeps running.
+    if (container.alpha > 0.01) container.alpha = 0.0;
+
+    // Our MD3 sheet mirrors the native presentation.
+    if ([[CUIControlCenterController sharedInstance] isOpen]) return;
     [[CUIControlCenterController sharedInstance] openControlCenter];
 }
 
-static void CUICCEndTransitionSwizzled(id self, SEL _cmd, CGFloat velocity,
-                                       BOOL wasCancelled, id completion) {
-    if (completion) ((void (^)(void))completion)();
+static IMP g_origNativeCCDismiss = NULL;
+
+static void CUICCNativeCCDismissSwizzled(id self, SEL _cmd) {
+    if (g_origNativeCCDismiss) {
+        ((void (*)(id, SEL))g_origNativeCCDismiss)(self, _cmd);
+    }
+    [[CUIControlCenterController sharedInstance] closeControlCenter];
 }
 
-static void CUICCSuppressNativeCC() {
+static void CUICCInstallNativeCCHide() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class ccClass = NSClassFromString(@"SBControlCenterController");
-        if (!ccClass) {
-            CUICCTrace(@"SBControlCenterController unavailable");
+        Class containerClass = NSClassFromString(@"SBControlCenterContentContainerView");
+        if (!containerClass) {
+            CUICCTrace(@"SBControlCenterContentContainerView unavailable");
             return;
         }
-        Method mBegin = class_getInstanceMethod(ccClass,
-            @selector(beginPresentationWithTouchLocation:));
-        if (mBegin) {
-            if (class_addMethod(ccClass, @selector(beginPresentationWithTouchLocation:),
-                                (IMP)CUICCBeginPresentationSwizzled,
-                                method_getTypeEncoding(mBegin))) {
-                method_getImplementation(mBegin);
+        Method layout = class_getInstanceMethod(containerClass, @selector(layoutSubviews));
+        if (layout) {
+            if (class_addMethod(containerClass, @selector(layoutSubviews),
+                                (IMP)CUICCNativeCCLayoutSwizzled,
+                                method_getTypeEncoding(layout))) {
+                g_origNativeCCLayout = method_getImplementation(layout);
             } else {
-                method_setImplementation(mBegin, (IMP)CUICCBeginPresentationSwizzled);
+                g_origNativeCCLayout = method_setImplementation(layout,
+                    (IMP)CUICCNativeCCLayoutSwizzled);
             }
-            CUICCTrace(@"beginPresentationWithTouchLocation: swizzled");
-        } else {
-            CUICCTrace(@"beginPresentationWithTouchLocation: MISSING");
+            CUICCTrace(@"native CC layout hook installed");
         }
-        Method mEnd = class_getInstanceMethod(ccClass,
-            @selector(endTransitionWithVelocity:wasCancelled:completion:));
-        if (mEnd) {
-            if (class_addMethod(ccClass,
-                                @selector(endTransitionWithVelocity:wasCancelled:completion:),
-                                (IMP)CUICCEndTransitionSwizzled,
-                                method_getTypeEncoding(mEnd))) {
-                method_getImplementation(mEnd);
+        Method dismiss = class_getInstanceMethod(containerClass,
+                                                  @selector(controlCenterDidDismiss));
+        if (dismiss) {
+            if (class_addMethod(containerClass, @selector(controlCenterDidDismiss),
+                                (IMP)CUICCNativeCCDismissSwizzled,
+                                method_getTypeEncoding(dismiss))) {
+                g_origNativeCCDismiss = method_getImplementation(dismiss);
             } else {
-                method_setImplementation(mEnd, (IMP)CUICCEndTransitionSwizzled);
+                g_origNativeCCDismiss = method_setImplementation(dismiss,
+                    (IMP)CUICCNativeCCDismissSwizzled);
             }
-            CUICCTrace(@"endTransition swizzled");
+            CUICCTrace(@"native CC dismiss hook installed");
         }
-        Method m3 = class_getInstanceMethod(ccClass,
-                                            @selector(_presentWithDuration:completion:));
-        if (m3) {
-            if (class_addMethod(ccClass, @selector(_presentWithDuration:completion:),
-                                (IMP)CUICCPresentDurationSwizzled,
-                                method_getTypeEncoding(m3))) {
-                method_getImplementation(m3); // orig retained by the class
-            } else {
-                method_setImplementation(m3, (IMP)CUICCPresentDurationSwizzled);
-            }
-            CUICCTrace(@"_presentWithDuration: swizzled");
-        } else {
-            CUICCTrace(@"_presentWithDuration: MISSING on this firmware");
-        }
-        Method m1 = class_getInstanceMethod(ccClass, @selector(presentAnimated:));
-        if (m1) {
-            if (class_addMethod(ccClass, @selector(presentAnimated:),
-                                (IMP)CUICCPresentSwizzled,
-                                method_getTypeEncoding(m1))) {
-                g_origPresentAnimated = method_getImplementation(m1);
-            } else {
-                g_origPresentAnimated = method_setImplementation(m1,
-                    (IMP)CUICCPresentSwizzled);
-            }
-        }
-        Method m2 = class_getInstanceMethod(ccClass,
-                                            @selector(presentAnimated:completion:));
-        if (m2) {
-            if (class_addMethod(ccClass, @selector(presentAnimated:completion:),
-                                (IMP)CUICCPresentCompletionSwizzled,
-                                method_getTypeEncoding(m2))) {
-                g_origPresentAnimatedCompletion = method_getImplementation(m2);
-            } else {
-                g_origPresentAnimatedCompletion = method_setImplementation(m2,
-                    (IMP)CUICCPresentCompletionSwizzled);
-            }
-        }
-        CUICCTrace(@"native CC suppressed (presentAnimated swizzled)");
     });
 }
 
-static void CUICCSwizzleMenuButton() {
+static void CUICCSwizzleMenuButton() {static void CUICCSwizzleMenuButton() {
     dispatch_once(&g_ccSwizzleOnce, ^{
         Class sbClass = NSClassFromString(@"SpringBoard");
         if (!sbClass) return;
@@ -247,7 +226,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         // answer with our overlay panel instead (works in apps too, the
         // overlay window floats above everything).
         [CUICCServiceBridge probeClassesIfNeeded]; // 8.4.1 ground truth dump
-        CUICCSuppressNativeCC();
+        CUICCInstallNativeCCHide();
         CUICCSwizzleMenuButton();
         CUICCTrace(@"activate: MD3 sheet (iOS 8)");
         return;

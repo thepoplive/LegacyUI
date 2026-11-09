@@ -20,7 +20,9 @@ UIWindow *CUISharedOverlayWindow(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         window = [[CUIOverlayWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        window.windowLevel = UIWindowLevelStatusBar + 1.0;
+        // Above the CC SBSecureWindow (StatusBar + 2) so the MD3 sheet both
+        // renders above the (invisible) native CC and receives its touches.
+        window.windowLevel = UIWindowLevelStatusBar + 100.0;
         window.backgroundColor = [UIColor clearColor];
         window.userInteractionEnabled = YES;
         window.hidden = NO;

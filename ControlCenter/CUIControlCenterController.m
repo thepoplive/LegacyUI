@@ -63,27 +63,6 @@ static void CUICCSwizzleFrontDisplay() {
     });
 }
 
-// Verified in the iOS 8.0 dumps (SBControlCenterController.h):
-//   - (void)presentAnimated:(_Bool)arg1;
-//   - (void)presentAnimated:(_Bool)arg1 completion:(CDUnknownBlockType)arg2;
-static IMP g_origPresentAnimated = NULL;
-static IMP g_origPresentAnimatedCompletion = NULL;
-
-static void CUICCPresentSwizzled(id self, SEL _cmd, BOOL animated) {
-    [[CUIControlCenterController sharedInstance] openControlCenter];
-    // native presentation swallowed — our MD3 sheet opens instead
-}
-
-static void CUICCPresentCompletionSwizzled(id self, SEL _cmd, BOOL animated, id completion) {
-    [[CUIControlCenterController sharedInstance] openControlCenter];
-    if (completion) ((void (^)(void))completion)();
-}
-
-static void CUICCPresentDurationSwizzled(id self, SEL _cmd, double duration, id completion) {
-    [[CUIControlCenterController sharedInstance] openControlCenter];
-    if (completion) ((void (^)(void))completion)();
-}
-
 // The native CC lives in an SBSecureWindow ABOVE our overlay window; the
 // 0.6.2 attempt to swallow beginPresentationWithTouchLocation: left the
 // system gesture half-engaged and the empty CC window ate ALL touches.
@@ -153,7 +132,7 @@ static void CUICCInstallNativeCCHide() {
     });
 }
 
-static void CUICCSwizzleMenuButton() {static void CUICCSwizzleMenuButton() {
+static void CUICCSwizzleMenuButton() {
     dispatch_once(&g_ccSwizzleOnce, ^{
         Class sbClass = NSClassFromString(@"SpringBoard");
         if (!sbClass) return;

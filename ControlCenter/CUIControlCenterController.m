@@ -84,6 +84,20 @@ static void CUICCPresentDurationSwizzled(id self, SEL _cmd, double duration, id 
     if (completion) ((void (^)(void))completion)();
 }
 
+// Probe-verified 8.4.1 interactive path: the swipe begins with
+// -beginPresentationWithTouchLocation: (the native CC starts appearing
+// right away) and finishes with -endTransitionWithVelocity:wasCancelled:
+// completion:. The presentAnimated:/_presentWithDuration entry points are
+// NOT on this path — swallowing the begin is the only working suppression.
+static void CUICCBeginPresentationSwizzled(id self, SEL _cmd, CGPoint location) {
+    [[CUIControlCenterController sharedInstance] openControlCenter];
+}
+
+static void CUICCEndTransitionSwizzled(id self, SEL _cmd, CGFloat velocity,
+                                       BOOL wasCancelled, id completion) {
+    if (completion) ((void (^)(void))completion)();
+}
+
 static void CUICCSuppressNativeCC() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -91,6 +105,33 @@ static void CUICCSuppressNativeCC() {
         if (!ccClass) {
             CUICCTrace(@"SBControlCenterController unavailable");
             return;
+        }
+        Method mBegin = class_getInstanceMethod(ccClass,
+            @selector(beginPresentationWithTouchLocation:));
+        if (mBegin) {
+            if (class_addMethod(ccClass, @selector(beginPresentationWithTouchLocation:),
+                                (IMP)CUICCBeginPresentationSwizzled,
+                                method_getTypeEncoding(mBegin))) {
+                method_getImplementation(mBegin);
+            } else {
+                method_setImplementation(mBegin, (IMP)CUICCBeginPresentationSwizzled);
+            }
+            CUICCTrace(@"beginPresentationWithTouchLocation: swizzled");
+        } else {
+            CUICCTrace(@"beginPresentationWithTouchLocation: MISSING");
+        }
+        Method mEnd = class_getInstanceMethod(ccClass,
+            @selector(endTransitionWithVelocity:wasCancelled:completion:));
+        if (mEnd) {
+            if (class_addMethod(ccClass,
+                                @selector(endTransitionWithVelocity:wasCancelled:completion:),
+                                (IMP)CUICCEndTransitionSwizzled,
+                                method_getTypeEncoding(mEnd))) {
+                method_getImplementation(mEnd);
+            } else {
+                method_setImplementation(mEnd, (IMP)CUICCEndTransitionSwizzled);
+            }
+            CUICCTrace(@"endTransition swizzled");
         }
         Method m3 = class_getInstanceMethod(ccClass,
                                             @selector(_presentWithDuration:completion:));

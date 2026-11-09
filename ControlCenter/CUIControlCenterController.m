@@ -79,6 +79,11 @@ static void CUICCPresentCompletionSwizzled(id self, SEL _cmd, BOOL animated, id 
     if (completion) ((void (^)(void))completion)();
 }
 
+static void CUICCPresentDurationSwizzled(id self, SEL _cmd, double duration, id completion) {
+    [[CUIControlCenterController sharedInstance] openControlCenter];
+    if (completion) ((void (^)(void))completion)();
+}
+
 static void CUICCSuppressNativeCC() {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -86,6 +91,20 @@ static void CUICCSuppressNativeCC() {
         if (!ccClass) {
             CUICCTrace(@"SBControlCenterController unavailable");
             return;
+        }
+        Method m3 = class_getInstanceMethod(ccClass,
+                                            @selector(_presentWithDuration:completion:));
+        if (m3) {
+            if (class_addMethod(ccClass, @selector(_presentWithDuration:completion:),
+                                (IMP)CUICCPresentDurationSwizzled,
+                                method_getTypeEncoding(m3))) {
+                method_getImplementation(m3); // orig retained by the class
+            } else {
+                method_setImplementation(m3, (IMP)CUICCPresentDurationSwizzled);
+            }
+            CUICCTrace(@"_presentWithDuration: swizzled");
+        } else {
+            CUICCTrace(@"_presentWithDuration: MISSING on this firmware");
         }
         Method m1 = class_getInstanceMethod(ccClass, @selector(presentAnimated:));
         if (m1) {
@@ -186,6 +205,7 @@ static void CUICCMenuButtonDownSwizzled(id self, SEL _cmd, void *event) {
         // SBControlCenterController -presentAnimated:, which we swallow and
         // answer with our overlay panel instead (works in apps too, the
         // overlay window floats above everything).
+        [CUICCServiceBridge probeClassesIfNeeded]; // 8.4.1 ground truth dump
         CUICCSuppressNativeCC();
         CUICCSwizzleMenuButton();
         CUICCTrace(@"activate: MD3 sheet (iOS 8)");

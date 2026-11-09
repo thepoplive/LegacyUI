@@ -271,7 +271,8 @@ static void CUICCReadLiveStates(NSMutableString *out) {
                          @"SBMediaController", @"VolumeControl", @"SpringBoard",
                          @"SBCCWiFiSetting", @"SBBrightnessController",
                          @"SBStatusBarDataManager", @"SBStatusBarController",
-                         @"SBDoNotDisturbController", @"SBDNDState", @"SBUIController"];
+                         @"SBDoNotDisturbController", @"SBDNDState", @"SBUIController",
+                         @"SBControlCenterController", @"SBControlCenterViewController"];
     for (NSString *name in classes) CUICCDumpClassMethods(out, name);
     CUICCDumpIvars(out, @"SpringBoard"); // ivar list of the UIApplication singleton class
     CUICCReadLiveStates(out);

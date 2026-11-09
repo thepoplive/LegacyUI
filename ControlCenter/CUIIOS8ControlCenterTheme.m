@@ -4,161 +4,60 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <UIKit/UIKit.h>
-#import <math.h>
 
-// iOS 8 native Control Center restyle — LegacyUI Liquid Glass.
-//
-// Ground truth (on-device dump, iPhone 4S 8.4.1):
-//   SBControlCenterContentContainerView: -layoutSubviews, ivars _contentView
-//   SBControlCenterButton (UIControl): full-size UIImageView "plate" is the
-//     circle background AND sits ABOVE the glyph UIImageView; the on/off
-//     state is the plain UIControl selected flag.
-// iOS 8.0-8.1 also had +image factory methods (kept, no-op on 8.4).
+// Verified against the iOS 8.0/8.1 dumps (MP0w/iOS-Headers):
+//   SBUIControlCenterButton (SpringBoardUI):
+//     + (UIImage *)_circleBackgroundImageForState:(int)state;
+//     + (UIImage *)_roundRectBackgroundImageForState:(int)state;
+//   SBControlCenterContentContainerView (SpringBoard):
+//     - (void)layoutSubviews;  ivars: _backdropView, _contentView
 
 #define IOS8_CC_ACCENT   [UIColor colorWithRed:0xD0/255.0 green:0xBC/255.0 blue:0xFF/255.0 alpha:1.0]
-#define IOS8_CC_ACTIVE_A [UIColor colorWithRed:0x7A/255.0 green:0x5F/255.0 blue:0xB5/255.0 alpha:1.0]
-#define IOS8_CC_ACTIVE_B [UIColor colorWithRed:0x4F/255.0 green:0x37/255.0 blue:0x8B/255.0 alpha:1.0]
+#define IOS8_CC_ACTIVE   [UIColor colorWithRed:0x4F/255.0 green:0x37/255.0 blue:0x8B/255.0 alpha:1.0]
+#define IOS8_CC_IDLE     [UIColor colorWithWhite:1.0 alpha:0.10]
+#define IOS8_CC_BORDER_A 0.20
 
 static BOOL CUIIOS8CCWanted() {
     CUIConfiguration *config = [CUIConfiguration sharedInstance];
     return config.enabled && config.controlCenterEnabled;
 }
 
-#pragma mark - Liquid glass drawing
-
-static CGGradientRef CUIIOS8LinearGradient(CGFloat *components, CGPoint start, CGPoint end) {
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGGradientRef gradient = CGGradientCreateWithColorComponents(
-        space, components, NULL, 2);
-    CFRelease(space);
-    (void)start; (void)end;
-    return gradient;
-}
-
-// Translucent glass: vertical sheen, specular highlight near the top,
-// hairline border. Everything inside the circle clip.
-static void CUIIOS8DrawGlassCircle(CGContextRef ctx, CGRect circle) {
-    CGContextSaveGState(ctx);
-    CGContextAddEllipseInRect(ctx, circle);
-    CGContextClip(ctx);
-
-    CGFloat sheen[] = {1, 1, 1, 0.20, 1, 1, 1, 0.04};
-    CGGradientRef grad = CUIIOS8LinearGradient(sheen, CGPointZero, CGPointZero);
-    CGContextDrawLinearGradient(ctx, grad,
-        circle.origin,
-        CGPointMake(circle.origin.x, CGRectGetMaxY(circle)),
-        kCGGradientDrawsBeforeStartLocation | kCGGradientDrawsAfterEndLocation);
-    CFRelease(grad);
-
-    CGFloat spec[] = {1, 1, 1, 0.38, 1, 1, 1, 0.0};
-    CGFloat specW = circle.size.width * 0.60;
-    CGFloat specH = circle.size.height * 0.26;
-    CGRect specRect = CGRectMake(
-        CGRectGetMidX(circle) - specW / 2.0,
-        circle.origin.y + circle.size.height * 0.10,
-        specW, specH);
-    CGContextAddEllipseInRect(ctx, specRect);
-    CGContextClip(ctx);
-    CGGradientRef specGrad = CUIIOS8LinearGradient(spec, CGPointZero, CGPointZero);
-    CGContextDrawLinearGradient(ctx, specGrad,
-        specRect.origin,
-        CGPointMake(specRect.origin.x, CGRectGetMaxY(specRect)), 0);
-    CFRelease(specGrad);
-    CGContextRestoreGState(ctx);
-
-    CGContextSetStrokeColorWithColor(ctx,
-        [UIColor colorWithWhite:1.0 alpha:0.35].CGColor);
-    CGContextSetLineWidth(ctx, MAX(1.0, circle.size.width * 0.022));
-    CGContextStrokeEllipseInRect(ctx, circle);
-}
-
-// Active liquid: violet radial fill with a lit core, specular top,
-// accent hairline. The outer glow is a real layer shadow (see StyleButton),
-// so nothing is baked/clipped here.
-static void CUIIOS8DrawActiveCircle(CGContextRef ctx, CGRect circle) {
-    CGContextSaveGState(ctx);
-    CGContextAddEllipseInRect(ctx, circle);
-    CGContextClip(ctx);
-
-    CGFloat inner[] = {0x7A/255.0, 0x5F/255.0, 0xB5/255.0, 1.0};
-    CGFloat outer[] = {0x4F/255.0, 0x37/255.0, 0x8B/255.0, 1.0};
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGGradientRef grad = CGGradientCreateWithColorComponents(
-        space, inner, NULL, 1);
-    CGGradientRef gradEdge = CGGradientCreateWithColorComponents(
-        space, outer, NULL, 1);
-    CFRelease(space);
-
-    CGPoint core = CGPointMake(CGRectGetMidX(circle),
-                               circle.origin.y + circle.size.height * 0.38);
-    // Two-stop radial via edge fill then lighter core overlay.
-    CGContextDrawRadialGradient(ctx, gradEdge,
-        core, 0, core, circle.size.width * 0.75, 0);
-    CGContextDrawRadialGradient(ctx, grad,
-        core, 0, core, circle.size.width * 0.45, 0);
-    CFRelease(grad);
-    CFRelease(gradEdge);
-
-    CGFloat spec[] = {1, 1, 1, 0.30, 1, 1, 1, 0.0};
-    CGFloat specW = circle.size.width * 0.55;
-    CGFloat specH = circle.size.height * 0.22;
-    CGRect specRect = CGRectMake(
-        CGRectGetMidX(circle) - specW / 2.0,
-        circle.origin.y + circle.size.height * 0.09,
-        specW, specH);
-    CGContextAddEllipseInRect(ctx, specRect);
-    CGContextClip(ctx);
-    CGGradientRef specGrad = CUIIOS8LinearGradient(spec, CGPointZero, CGPointZero);
-    CGContextDrawLinearGradient(ctx, specGrad,
-        specRect.origin,
-        CGPointMake(specRect.origin.x, CGRectGetMaxY(specRect)), 0);
-    CFRelease(specGrad);
-    CGContextRestoreGState(ctx);
-
-    // Baked soft glow: two inner luminous rings (layer-shadow writes from
-    // the layout-called setSelected: hung SpringBoard — glow lives in the
-    // image instead).
-    CGContextSaveGState(ctx);
-    CGContextAddEllipseInRect(ctx, circle);
-    CGContextClip(ctx);
-    CGContextSetStrokeColorWithColor(ctx,
-        [IOS8_CC_ACCENT colorWithAlphaComponent:0.30].CGColor);
-    CGContextSetLineWidth(ctx, circle.size.width * 0.09);
-    CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
-        circle.size.width * 0.055, circle.size.height * 0.055));
-    CGContextSetStrokeColorWithColor(ctx,
-        [IOS8_CC_ACCENT colorWithAlphaComponent:0.14].CGColor);
-    CGContextSetLineWidth(ctx, circle.size.width * 0.16);
-    CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
-        circle.size.width * 0.10, circle.size.height * 0.10));
-    CGContextRestoreGState(ctx);
-
-    CGContextSetStrokeColorWithColor(ctx,
-        [IOS8_CC_ACCENT colorWithAlphaComponent:0.8].CGColor);
-    CGContextSetLineWidth(ctx, MAX(1.0, circle.size.width * 0.022));
-    CGContextStrokeEllipseInRect(ctx, circle);
-}
+#pragma mark - Image factories
 
 static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
     BOOL active = (state & UIControlStateSelected) != 0;
     BOOL highlighted = (state & UIControlStateHighlighted) != 0;
-    if (size.width < 4 || size.height < 4) size = CGSizeMake(94, 94);
+    if (size.width < 4 || size.height < 4) size = CGSizeMake(120, 120);
 
     UIGraphicsBeginImageContextWithOptions(size, NO, [UIScreen mainScreen].scale);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
     CGRect r = CGRectMake(0, 0, size.width, size.height);
-    CGFloat inset = MAX(1.0, size.width * 0.02);
+    CGFloat inset = size.width * 0.02;
     CGRect circle = CGRectInset(r, inset, inset);
 
     if (active) {
-        CUIIOS8DrawActiveCircle(ctx, circle);
+        // Soft outer glow baked into the padding.
+        CGContextSetShadowWithColor(ctx, CGSizeZero, size.width * 0.10,
+                                    [IOS8_CC_ACCENT colorWithAlphaComponent:0.55].CGColor);
+        CGContextSetFillColorWithColor(ctx, IOS8_CC_ACTIVE.CGColor);
+        CGContextFillEllipseInRect(ctx, circle);
+        CGContextSetShadowWithColor(ctx, CGSizeZero, 0, nil);
     } else {
-        CUIIOS8DrawGlassCircle(ctx, circle);
-    }
-    if (highlighted) {
-        CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
+        CGContextSetFillColorWithColor(ctx, IOS8_CC_IDLE.CGColor);
         CGContextFillEllipseInRect(ctx, circle);
     }
+
+    if (highlighted) {
+        CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.12].CGColor);
+        CGContextFillEllipseInRect(ctx, circle);
+    }
+
+    // Thin border ring.
+    CGContextSetStrokeColorWithColor(ctx,
+        (active ? [IOS8_CC_ACCENT colorWithAlphaComponent:0.7]
+                : [UIColor colorWithWhite:1.0 alpha:IOS8_CC_BORDER_A]).CGColor);
+    CGContextSetLineWidth(ctx, size.width * 0.02);
+    CGContextStrokeEllipseInRect(ctx, circle);
 
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -175,7 +74,7 @@ static UIImage *CUIIOS8TileImage(CGSize size, NSUInteger state) {
     UIBezierPath *tile = [UIBezierPath bezierPathWithRoundedRect:r
         cornerRadius:MIN(size.width, size.height) * 0.24];
 
-    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.09].CGColor);
+    CGContextSetFillColorWithColor(ctx, IOS8_CC_IDLE.CGColor);
     CGContextAddPath(ctx, tile.CGPath);
     CGContextFillPath(ctx);
     if (highlighted) {
@@ -184,8 +83,8 @@ static UIImage *CUIIOS8TileImage(CGSize size, NSUInteger state) {
         CGContextFillPath(ctx);
     }
     CGContextSetStrokeColorWithColor(ctx,
-        [UIColor colorWithWhite:1.0 alpha:0.28].CGColor);
-    CGContextSetLineWidth(ctx, MAX(1.0, size.width * 0.008));
+        [UIColor colorWithWhite:1.0 alpha:IOS8_CC_BORDER_A].CGColor);
+    CGContextSetLineWidth(ctx, size.width * 0.008);
     CGContextAddPath(ctx, tile.CGPath);
     CGContextStrokePath(ctx);
 
@@ -194,7 +93,7 @@ static UIImage *CUIIOS8TileImage(CGSize size, NSUInteger state) {
     return image;
 }
 
-#pragma mark - Legacy 8.0-8.1 image factory swizzles (no-op on 8.4)
+#pragma mark - Swizzles
 
 static IMP g_origCircleBG = NULL;
 static IMP g_origTileBG = NULL;
@@ -225,7 +124,13 @@ static UIImage *CUIIOS8TileBGSwizzled(id self, SEL _cmd, long state) {
     return CUIIOS8TileImage(size, (NSUInteger)state);
 }
 
-#pragma mark - Toggle restyle (8.4.1 plate swap + state swizzles)
+#pragma mark - Toggle restyle (8.4.1 ground truth)
+
+// On 8.4.1 the circle background is a full-size UIImageView inside each
+// SBControlCenterButton, and the on/off state is the plain UIControl
+// `selected` flag (dump-verified: WiFi off -> selected=0, others selected=1).
+// We swap the background image for our glass/violet circles and re-apply on
+// every state change via setSelected:/setHighlighted:.
 
 static UIImage *CUIIOS8CachedCircle(CGSize size, NSUInteger state) {
     static NSMutableDictionary *cache;
@@ -244,31 +149,28 @@ static UIImage *CUIIOS8CachedCircle(CGSize size, NSUInteger state) {
     return image;
 }
 
-static UIImageView *CUIIOS8ButtonPlate(UIControl *button) {
-    for (UIView *sub in button.subviews) {
-        if (![sub isKindOfClass:[UIImageView class]]) continue;
-        if (sub.frame.size.width >= button.bounds.size.width * 0.95 &&
-            ABS(sub.frame.size.width - sub.frame.size.height) < 1.0) {
-            return (UIImageView *)sub;
-        }
-    }
-    return nil;
-}
-
-// Restyle one button: swap the plate image and sink the plate BELOW the
-// glyph via layer zPosition. That is the only tree-free way: the native
-// setSelected:/layout pass runs INSIDE layoutSubviews at CC open, and any
-// subview reorder or layer-shadow write from there never converges ->
-// 120s watchdog -> safe mode (verified on device three times).
 static void CUIIOS8StyleButton(UIControl *button) {
     static Class buttonClass = NULL;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ buttonClass = NSClassFromString(@"SBControlCenterButton"); });
     if (!buttonClass || ![button isKindOfClass:buttonClass]) return;
 
-    UIImageView *plate = CUIIOS8ButtonPlate(button);
+    // Full-size square UIImageView = the circle background plate.
+    UIImageView *plate = nil;
+    for (UIView *sub in button.subviews) {
+        if (![sub isKindOfClass:[UIImageView class]]) continue;
+        if (sub.frame.size.width >= button.bounds.size.width * 0.95 &&
+            ABS(sub.frame.size.width - sub.frame.size.height) < 1.0) {
+            plate = (UIImageView *)sub;
+            break;
+        }
+    }
     if (!plate) return;
 
+    // Single deviation from the stable 0.4.2 baseline (bisect): sink the
+    // plate below the glyph via layer zPosition — fixes the icon being
+    // covered by the active fill, without reordering subviews (reorder +
+    // dispatch variants all watchdog-hung SpringBoard on device).
     if (plate.layer.zPosition != -1.0f) plate.layer.zPosition = -1.0f;
 
     NSUInteger state = 0;
@@ -287,16 +189,12 @@ static void CUIIOS8StyleButtonsInTree(UIView *view) {
     }
 }
 
-#pragma mark State swizzles (stable subset)
-
 static IMP g_origSetSelected = NULL;
 
 static void CUIIOS8SetSelectedSwizzled(id self, SEL _cmd, BOOL selected) {
     if (g_origSetSelected) {
         ((void (*)(id, SEL, BOOL))g_origSetSelected)(self, _cmd, selected);
     }
-    // NOTE: this fires inside the native layout pass at CC open, so only
-    // the idempotent, layout-safe restyle runs here (image swap + zPosition).
     if (CUIIOS8CCWanted()) CUIIOS8StyleButton((UIControl *)self);
 }
 
@@ -315,6 +213,69 @@ static IMP g_origPanelLayout = NULL;
 
 static char kIOS8CCPanelTintKey;
 static char kIOS8CCPanelBorderKey;
+
+// Ground-truth diagnostics: /var/mobile/.legacyui_ccdump -> full native CC
+// hierarchy on THIS firmware (8.4.1), plus swizzle status and factory call
+// counters, written to /var/mobile/legacyui_ccdump.txt on the next panel
+// layout (i.e. the first Control Center open after respring).
+static void CUIIOS8DumpView(UIView *view, NSMutableString *out, int depth) {
+    for (int i = 0; i < depth; i++) [out appendString:@"  "];
+    [out appendFormat:@"%@ frame=%@ alpha=%.2f hidden=%d",
+        NSStringFromClass([view class]),
+        NSStringFromCGRect(view.frame),
+        view.alpha, view.hidden];
+    if ([view isKindOfClass:[UIImageView class]]) {
+        UIImageView *iv = (UIImageView *)view;
+        [out appendFormat:@" image=%@",
+            iv.image ? NSStringFromCGSize(iv.image.size) : @"nil"];
+    }
+    if ([view isKindOfClass:[UIControl class]]) {
+        [out appendFormat:@" state=%lu selected=%d highlighted=%d",
+            (unsigned long)[(UIControl *)view state],
+            [(UIControl *)view isSelected],
+            [(UIControl *)view isHighlighted]];
+    }
+    [out appendString:@"\n"];
+    for (UIView *sub in view.subviews) {
+        CUIIOS8DumpView(sub, out, depth + 1);
+    }
+}
+
+static void CUIIOS8MaybeDumpCC(UIView *panel) {
+    if (![[NSFileManager defaultManager] fileExistsAtPath:@"/var/mobile/.legacyui_ccdump"]) return;
+
+    NSMutableString *dump = [NSMutableString string];
+    [dump appendFormat:@"=== LegacyUI iOS8 CC diagnostics ===\n"];
+    [dump appendFormat:@"swizzles: circle=%@ tile=%@ panel=%@\n",
+        g_origCircleBG ? @"installed" : @"MISSING",
+        g_origTileBG ? @"installed" : @"MISSING",
+        g_origPanelLayout ? @"installed" : @"MISSING"];
+    [dump appendFormat:@"factory calls: circle=%d tile=%d\n", s_circleCalls, s_tileCalls];
+
+    Class buttonClass = NSClassFromString(@"SBUIControlCenterButton");
+    [dump appendFormat:@"SBUIControlCenterButton: %@\n", buttonClass ? @"present" : @"ABSENT"];
+    if (buttonClass) {
+        [dump appendFormat:@"  +_circleBackgroundImageForState: %@\n",
+            class_getClassMethod(buttonClass, @selector(_circleBackgroundImageForState:))
+                ? @"yes" : @"NO"];
+        [dump appendFormat:@"  +_roundRectBackgroundImageForState: %@\n",
+            class_getClassMethod(buttonClass, @selector(_roundRectBackgroundImageForState:))
+                ? @"yes" : @"NO"];
+    }
+    [dump appendFormat:@"SBCCButtonLikeSectionView: %@\n",
+        NSClassFromString(@"SBCCButtonLikeSectionView") ? @"present" : @"ABSENT"];
+
+    // Walk up to the CC root for the full tree.
+    UIView *root = panel;
+    while (root.superview) root = root.superview;
+    [dump appendString:@"\n=== full CC view tree (from window root) ===\n"];
+    CUIIOS8DumpView(root, dump, 0);
+
+    [dump writeToFile:@"/var/mobile/legacyui_ccdump.txt"
+           atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:@"/var/mobile/.legacyui_ccdump" error:NULL];
+    NSLog(@"[LegacyUI] CC hierarchy dumped");
+}
 
 static UIView *CUIIOS8IvarView(id view, NSString *ivarName) {
     Ivar ivar = class_getInstanceVariable([view class], [ivarName UTF8String]);
@@ -344,9 +305,10 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     }
 
     if (!tint) {
+        // Dark glass wash between the native blur and the content.
         tint = [[UIView alloc] init];
         tint.userInteractionEnabled = NO;
-        tint.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.28];
+        tint.backgroundColor = [UIColor colorWithWhite:0.02 alpha:0.30];
         tint.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
         UIView *content = CUIIOS8IvarView(panel, @"_contentView");
@@ -358,6 +320,7 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
         objc_setAssociatedObject(panel, &kIOS8CCPanelTintKey, tint,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
+        // Top corner rounding + hairline border, our 3GS panel geometry.
         UIView *border = [[UIView alloc] init];
         border.userInteractionEnabled = NO;
         border.backgroundColor = [UIColor clearColor];
@@ -374,6 +337,12 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     tint.frame = panel.bounds;
     border.frame = panel.bounds;
 
+    CUIIOS8MaybeDumpCC(panel);
+
+    // Catch-all: freshly created buttons and page scrolls get styled on the
+    // next layout pass, even if a state setter slipped through.
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButtonsInTree(panel);
+
     CGFloat radius = 24.0;
     UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:panel.bounds
         byRoundingCorners:UIRectCornerTopLeft | UIRectCornerTopRight
@@ -384,10 +353,6 @@ static void CUIIOS8PanelLayoutSwizzled(id self, SEL _cmd) {
     CAShapeLayer *borderMask = [CAShapeLayer layer];
     borderMask.path = path.CGPath;
     border.layer.mask = borderMask;
-
-    // Catch-all for freshly created buttons: image swaps only, fully
-    // idempotent — synchronous like the proven-stable 0.4.2 pass.
-    CUIIOS8StyleButtonsInTree(panel);
 }
 
 #pragma mark - Install
@@ -405,6 +370,7 @@ static void CUIIOS8SwizzleMethod(Class cls, SEL sel, IMP newImp, IMP *origOut) {
 static void CUIIOS8SwizzleClassMethod(Class cls, SEL sel, IMP newImp, IMP *origOut) {
     Method method = class_getClassMethod(cls, sel);
     if (!method) return;
+    // A class method lives on the metaclass; swap through the same handle.
     if (class_addMethod(object_getClass(cls), sel, newImp, method_getTypeEncoding(method))) {
         *origOut = method_getImplementation(method);
     } else {
@@ -418,16 +384,18 @@ void CUIIOS8InstallControlCenterTheme(void) {
     dispatch_once(&g_ios8CCOnce, ^{
         Class buttonClass = NSClassFromString(@"SBUIControlCenterButton");
         if (buttonClass) {
-            // iOS 8.0-8.1 factories (absent on 8.4.1 — verified on device).
+            // iOS 8.0-8.1: image factory swizzles (no-ops if the selectors
+            // were removed in later 8.x — verified missing on 8.4.1).
             CUIIOS8SwizzleClassMethod(buttonClass,
                                       @selector(_circleBackgroundImageForState:),
                                       (IMP)CUIIOS8CircleBGSwizzled, &g_origCircleBG);
             CUIIOS8SwizzleClassMethod(buttonClass,
                                       @selector(_roundRectBackgroundImageForState:),
                                       (IMP)CUIIOS8TileBGSwizzled, &g_origTileBG);
+            NSLog(@"[LegacyUI] SBUIControlCenterButton image factories swizzled");
         }
 
-        // iOS 8.4.1 path: plate swap + glow on real state changes.
+        // iOS 8.4.1 path: restyle the background plate per UIControl state.
         Class ccButtonClass = NSClassFromString(@"SBControlCenterButton");
         if (ccButtonClass) {
             CUIIOS8SwizzleMethod(ccButtonClass, @selector(setSelected:),

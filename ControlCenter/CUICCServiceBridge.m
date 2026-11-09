@@ -535,7 +535,7 @@ static void CUI_MRFetchNowPlaying(void) {
     // -isPlaying verified by the on-device runtime probe (real method list);
     // MediaRemote playbackRate as the iOS 8 fallback source.
     if (CUICCResponds(controller, @"isPlaying")) {
-        if (((BOOL (*)(id, SEL))objc_msgSend)(controller, @selector(isPlaying"))) {
+        if (((BOOL (*)(id, SEL))objc_msgSend)(controller, @selector(isPlaying))) {
             return YES;
         }
     }

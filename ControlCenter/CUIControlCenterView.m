@@ -268,6 +268,7 @@ static const CGFloat kSheetGap = 7.0;
 @property (nonatomic, strong) NSArray *staggerViews;
 @property (nonatomic, assign) CGFloat panelHeight;
 @property (nonatomic, assign) float progress;
+@property (nonatomic, assign) BOOL mediaFavourite;
 @end
 
 // Tile pages: key|title|iconIndex (icon order below).

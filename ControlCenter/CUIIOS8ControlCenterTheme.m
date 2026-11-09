@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <UIKit/UIKit.h>
+#import <math.h>
 
 // Verified against the iOS 8.0/8.1 dumps (MP0w/iOS-Headers):
 //   SBUIControlCenterButton (SpringBoardUI):
@@ -24,37 +25,63 @@ static BOOL CUIIOS8CCWanted() {
 
 #pragma mark - Image factories
 
-// Liquid glass look built ONLY from the primitives proven stable on-device
-// (0.4.2/0.4.8): CGContextFillEllipseInRect, CGContextStrokeEllipseInRect,
-// CGContextSetShadowWithColor. NO CGGradient objects — creating gradients
-// inside the layout-pass render pipeline is what watchdog-hung 8.4.1.
-// Sheen = stacked translucent ellipses, glow = shadow, core = solid lit disc.
+// Liquid Glass (ybouane reference): dome bevel, fresnel edges, top rim
+// light, specular hotspot, bottom light-wrap, chromatic edge hint — all
+// faked with the primitives PROVEN STABLE on-device (0.4.2/0.4.8/0.4.9):
+// fill/stroke/arc/shadow only. NO CGGradient objects (they watchdog-hung
+// 8.4.1 from inside the layout pass). Pressed state = flattened bevel.
 
-static void CUIIOS8ClipToCircle(CGContextRef ctx, CGRect circle) {
-    CGContextSaveGState(ctx);
-    CGContextAddEllipseInRect(ctx, circle);
-    CGContextClip(ctx);
+static void CUIIOS8ArcStroke(CGContextRef ctx, CGPoint center, CGFloat radius,
+                             CGFloat startA, CGFloat endA,
+                             CGColorRef color, CGFloat width) {
+    CGContextSetStrokeColorWithColor(ctx, color);
+    CGContextSetLineWidth(ctx, width);
+    CGContextAddArc(ctx, center.x, center.y, radius, startA, endA, 0);
+    CGContextStrokePath(ctx);
 }
 
-// Fake vertical glass sheen: stacked translucent bands toward the top.
-static void CUIIOS8DrawSheen(CGContextRef ctx, CGRect circle) {
-    CUIIOS8ClipToCircle(ctx, circle);
-    CGRect band1 = CGRectMake(circle.origin.x, circle.origin.y,
-                              circle.size.width, circle.size.height * 0.55);
-    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
-    CGContextFillEllipseInRect(ctx, band1);
-    CGRect band2 = CGRectMake(circle.origin.x + circle.size.width * 0.10,
-                              circle.origin.y,
-                              circle.size.width * 0.80, circle.size.height * 0.34);
-    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
-    CGContextFillEllipseInRect(ctx, band2);
-    // Specular: hot small ellipse near the top.
-    CGRect spec = CGRectMake(CGRectGetMidX(circle) - circle.size.width * 0.26,
-                             circle.origin.y + circle.size.height * 0.12,
-                             circle.size.width * 0.52, circle.size.height * 0.20);
-    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.30].CGColor);
-    CGContextFillEllipseInRect(ctx, spec);
-    CGContextRestoreGState(ctx);
+static void CUIIOS8FillEllipse(CGContextRef ctx, CGRect rect, CGColorRef color) {
+    CGContextSetFillColorWithColor(ctx, color);
+    CGContextFillEllipseInRect(ctx, rect);
+}
+
+// The glass treatment, layered over an already-filled circle:
+// fresnel rings (edges brighter), top rim light + inner shadow under it
+// (bevel), bottom light-wrap, specular hotspot, chromatic edge hints.
+static void CUIIOS8DrawGlassTreatment(CGContextRef ctx, CGRect circle, BOOL tinted) {
+    CGPoint c = CGPointMake(CGRectGetMidX(circle), CGRectGetMidY(circle));
+    CGFloat R = circle.size.width / 2.0;
+    CGFloat topA0 = M_PI + 0.35, topA1 = 2.0 * M_PI - 0.35;   // through up
+    CGFloat botA0 = 0.35, botA1 = M_PI - 0.35;                // through down
+
+    // Fresnel: concentric rings, brighter toward the edge.
+    CUIIOS8ArcStroke(ctx, c, R * 0.92, 0, 2.0 * M_PI,
+        [UIColor colorWithWhite:1.0 alpha:tinted ? 0.14 : 0.10].CGColor, R * 0.10);
+    CUIIOS8ArcStroke(ctx, c, R * 0.78, 0, 2.0 * M_PI,
+        [UIColor colorWithWhite:1.0 alpha:0.06].CGColor, R * 0.10);
+
+    // Chromatic edge hint: cool line just outside, warm line just inside.
+    CUIIOS8ArcStroke(ctx, c, R * 0.985, topA0, topA1,
+        [UIColor colorWithRed:0.75 green:0.90 blue:1.0 alpha:0.16].CGColor, R * 0.03);
+    CUIIOS8ArcStroke(ctx, c, R * 0.94, botA0, botA1,
+        [UIColor colorWithRed:1.0 green:0.92 blue:0.80 alpha:0.10].CGColor, R * 0.03);
+
+    // Dome bevel: hot top rim, soft inner shadow right below it,
+    // gentle light-wrap along the bottom.
+    CUIIOS8ArcStroke(ctx, c, R * 0.90, topA0, topA1,
+        [UIColor colorWithWhite:1.0 alpha:0.60].CGColor, R * 0.09);
+    CUIIOS8ArcStroke(ctx, c, R * 0.80, topA0 + 0.10, topA1 - 0.10,
+        [UIColor colorWithWhite:0.0 alpha:0.22].CGColor, R * 0.13);
+    CUIIOS8ArcStroke(ctx, c, R * 0.90, botA0, botA1,
+        [UIColor colorWithWhite:1.0 alpha:0.16].CGColor, R * 0.09);
+
+    // Specular hotspot (top-left, Blinn-Phong fake).
+    CUIIOS8FillEllipse(ctx,
+        CGRectMake(c.x - R * 0.52, c.y - R * 0.78, R * 0.42, R * 0.30),
+        [UIColor colorWithWhite:1.0 alpha:0.42].CGColor);
+    CUIIOS8FillEllipse(ctx,
+        CGRectMake(c.x - R * 0.42, c.y - R * 0.68, R * 0.22, R * 0.14),
+        [UIColor colorWithWhite:1.0 alpha:0.35].CGColor);
 }
 
 static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
@@ -72,44 +99,43 @@ static UIImage *CUIIOS8CircleImage(CGSize size, NSUInteger state) {
         // Soft outer glow baked into the padding (proven-stable shadow path).
         CGContextSetShadowWithColor(ctx, CGSizeZero, size.width * 0.10,
                                     [IOS8_CC_ACCENT colorWithAlphaComponent:0.55].CGColor);
-        CGContextSetFillColorWithColor(ctx, IOS8_CC_ACTIVE.CGColor);
-        CGContextFillEllipseInRect(ctx, circle);
+        CUIIOS8FillEllipse(ctx, circle, IOS8_CC_ACTIVE.CGColor);
         CGContextSetShadowWithColor(ctx, CGSizeZero, 0, nil);
 
-        // Lit core: translucent lighter disc above center -> radial feel.
-        CUIIOS8ClipToCircle(ctx, circle);
-        CGRect core = CGRectMake(CGRectGetMidX(circle) - circle.size.width * 0.30,
-                                 circle.origin.y + circle.size.height * 0.16,
-                                 circle.size.width * 0.60, circle.size.height * 0.52);
-        CGContextSetFillColorWithColor(ctx,
-            [IOS8_CC_ACTIVE colorWithAlphaComponent:0.55].CGColor);
-        CGContextFillEllipseInRect(ctx, core);
+        // Lit core: translucent lighter disc above center -> lens depth.
+        CUIIOS8FillEllipse(ctx,
+            CGRectMake(CGRectGetMidX(circle) - circle.size.width * 0.30,
+                       circle.origin.y + circle.size.height * 0.16,
+                       circle.size.width * 0.60, circle.size.height * 0.52),
+            [IOS8_CC_ACTIVE colorWithAlphaComponent:0.45].CGColor);
         // Inner luminous ring.
-        CGContextSetStrokeColorWithColor(ctx,
-            [IOS8_CC_ACCENT colorWithAlphaComponent:0.30].CGColor);
-        CGContextSetLineWidth(ctx, circle.size.width * 0.09);
-        CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
-            circle.size.width * 0.055, circle.size.height * 0.055));
-        CGContextRestoreGState(ctx);
+        CUIIOS8ArcStroke(ctx,
+            CGPointMake(CGRectGetMidX(circle), CGRectGetMidY(circle)),
+            circle.size.width * 0.44, 0, 2.0 * M_PI,
+            [IOS8_CC_ACCENT colorWithAlphaComponent:0.28].CGColor,
+            circle.size.width * 0.09);
 
-        CUIIOS8DrawSheen(ctx, circle);
+        CUIIOS8DrawGlassTreatment(ctx, circle, YES);
     } else {
-        CGContextSetFillColorWithColor(ctx, IOS8_CC_IDLE.CGColor);
-        CGContextFillEllipseInRect(ctx, circle);
-        CUIIOS8DrawSheen(ctx, circle);
+        // Dark glass body.
+        CUIIOS8FillEllipse(ctx, circle, IOS8_CC_IDLE.CGColor);
+        CUIIOS8FillEllipse(ctx, circle, [UIColor colorWithWhite:0.0 alpha:0.14].CGColor);
+        CUIIOS8DrawGlassTreatment(ctx, circle, NO);
     }
 
     if (highlighted) {
-        CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:1.0 alpha:0.12].CGColor);
-        CGContextFillEllipseInRect(ctx, circle);
+        // Button mode: press flattens the bevel — dim and darken.
+        CUIIOS8FillEllipse(ctx, circle, [UIColor colorWithWhite:1.0 alpha:0.10].CGColor);
+        CUIIOS8FillEllipse(ctx, circle, [UIColor colorWithWhite:0.0 alpha:0.16].CGColor);
     }
 
-    // Thin border ring.
-    CGContextSetStrokeColorWithColor(ctx,
+    // Hairline border ring.
+    CUIIOS8ArcStroke(ctx,
+        CGPointMake(CGRectGetMidX(circle), CGRectGetMidY(circle)),
+        circle.size.width / 2.0, 0, 2.0 * M_PI,
         (active ? [IOS8_CC_ACCENT colorWithAlphaComponent:0.7]
-                : [UIColor colorWithWhite:1.0 alpha:IOS8_CC_BORDER_A]).CGColor);
-    CGContextSetLineWidth(ctx, size.width * 0.02);
-    CGContextStrokeEllipseInRect(ctx, circle);
+                : [UIColor colorWithWhite:1.0 alpha:IOS8_CC_BORDER_A]).CGColor,
+        MAX(1.0, size.width * 0.02));
 
     UIImage *image = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();

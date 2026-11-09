@@ -115,6 +115,24 @@ static void CUIIOS8DrawActiveCircle(CGContextRef ctx, CGRect circle) {
     CFRelease(specGrad);
     CGContextRestoreGState(ctx);
 
+    // Baked soft glow: two inner luminous rings (layer-shadow writes from
+    // the layout-called setSelected: hung SpringBoard — glow lives in the
+    // image instead).
+    CGContextSaveGState(ctx);
+    CGContextAddEllipseInRect(ctx, circle);
+    CGContextClip(ctx);
+    CGContextSetStrokeColorWithColor(ctx,
+        [IOS8_CC_ACCENT colorWithAlphaComponent:0.30].CGColor);
+    CGContextSetLineWidth(ctx, circle.size.width * 0.09);
+    CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
+        circle.size.width * 0.055, circle.size.height * 0.055));
+    CGContextSetStrokeColorWithColor(ctx,
+        [IOS8_CC_ACCENT colorWithAlphaComponent:0.14].CGColor);
+    CGContextSetLineWidth(ctx, circle.size.width * 0.16);
+    CGContextStrokeEllipseInRect(ctx, CGRectInset(circle,
+        circle.size.width * 0.10, circle.size.height * 0.10));
+    CGContextRestoreGState(ctx);
+
     CGContextSetStrokeColorWithColor(ctx,
         [IOS8_CC_ACCENT colorWithAlphaComponent:0.8].CGColor);
     CGContextSetLineWidth(ctx, MAX(1.0, circle.size.width * 0.022));
@@ -237,10 +255,11 @@ static UIImageView *CUIIOS8ButtonPlate(UIControl *button) {
     return nil;
 }
 
-// Restyle one button: swap the plate image ONLY (idempotent — safe inside
-// the layout pass, proven stable in 0.4.2). NO subview mutation and NO
-// dispatch here: the on-device watchdog stacks show a dispatch_async issued
-// from inside the CA commit phase never converging (120s hang, safe mode).
+// Restyle one button: swap the plate image and sink the plate BELOW the
+// glyph via layer zPosition. That is the only tree-free way: the native
+// setSelected:/layout pass runs INSIDE layoutSubviews at CC open, and any
+// subview reorder or layer-shadow write from there never converges ->
+// 120s watchdog -> safe mode (verified on device three times).
 static void CUIIOS8StyleButton(UIControl *button) {
     static Class buttonClass = NULL;
     static dispatch_once_t once;
@@ -250,38 +269,13 @@ static void CUIIOS8StyleButton(UIControl *button) {
     UIImageView *plate = CUIIOS8ButtonPlate(button);
     if (!plate) return;
 
+    if (plate.layer.zPosition != -1.0f) plate.layer.zPosition = -1.0f;
+
     NSUInteger state = 0;
     if (button.selected) state |= UIControlStateSelected;
     if (button.highlighted) state |= UIControlStateHighlighted;
     UIImage *styled = CUIIOS8CachedCircle(button.bounds.size, state);
     if (styled && plate.image != styled) plate.image = styled;
-}
-
-// Glyph above plate — called ONLY from the state swizzles (event phase,
-// outside any layout/commit), once per button. Mutating subview order from
-// inside layoutSubviews or a dispatch block is what hung SpringBoard.
-static char kIOS8CCOrderKey;
-
-static void CUIIOS8ReorderGlyphOnce(UIControl *button) {
-    if (objc_getAssociatedObject(button, &kIOS8CCOrderKey)) return;
-    objc_setAssociatedObject(button, &kIOS8CCOrderKey, @YES,
-                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    UIImageView *plate = CUIIOS8ButtonPlate(button);
-    if (!plate) return;
-    for (UIView *sub in button.subviews) {
-        if (sub != plate) [button bringSubviewToFront:sub];
-    }
-}
-
-// Soft violet glow around active circles — applied ONLY on real state
-// transitions, never from a layout pass.
-static void CUIIOS8ApplyGlow(UIControl *button, BOOL active) {
-    button.layer.shadowColor = IOS8_CC_ACCENT.CGColor;
-    button.layer.shadowRadius = 9.0;
-    button.layer.shadowOffset = CGSizeZero;
-    button.layer.shadowOpacity = active ? 0.45 : 0.0;
-    button.layer.shadowPath = [UIBezierPath bezierPathWithOvalInRect:
-        CGRectInset(button.bounds, 2.0, 2.0)].CGPath;
 }
 
 static void CUIIOS8StyleButtonsInTree(UIView *view) {
@@ -298,27 +292,12 @@ static void CUIIOS8StyleButtonsInTree(UIView *view) {
 static IMP g_origSetSelected = NULL;
 
 static void CUIIOS8SetSelectedSwizzled(id self, SEL _cmd, BOOL selected) {
-    BOOL was = ((UIControl *)self).selected;
     if (g_origSetSelected) {
         ((void (*)(id, SEL, BOOL))g_origSetSelected)(self, _cmd, selected);
     }
-    if (!CUIIOS8CCWanted()) return;
-    UIControl *button = (UIControl *)self;
-    CUIIOS8ReorderGlyphOnce(button); // event phase: safe to touch the tree
-    CUIIOS8StyleButton(button);
-    if (was != selected) {
-        CUIIOS8ApplyGlow(button, selected);
-        if (selected) {
-            // One-shot glow pulse on activation.
-            CABasicAnimation *pulse = [CABasicAnimation animationWithKeyPath:@"shadowOpacity"];
-            pulse.fromValue = @0.85;
-            pulse.toValue = @0.45;
-            pulse.duration = 0.5;
-            pulse.timingFunction = [CAMediaTimingFunction functionWithName:
-                kCAMediaTimingFunctionEaseOut];
-            [button.layer addAnimation:pulse forKey:@"glowPulse"];
-        }
-    }
+    // NOTE: this fires inside the native layout pass at CC open, so only
+    // the idempotent, layout-safe restyle runs here (image swap + zPosition).
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButton((UIControl *)self);
 }
 
 static IMP g_origSetHighlighted = NULL;
@@ -327,10 +306,7 @@ static void CUIIOS8SetHighlightedSwizzled(id self, SEL _cmd, BOOL highlighted) {
     if (g_origSetHighlighted) {
         ((void (*)(id, SEL, BOOL))g_origSetHighlighted)(self, _cmd, highlighted);
     }
-    if (!CUIIOS8CCWanted()) return;
-    UIControl *button = (UIControl *)self;
-    CUIIOS8ReorderGlyphOnce(button); // event phase: safe
-    CUIIOS8StyleButton(button); // image swap only, idempotent
+    if (CUIIOS8CCWanted()) CUIIOS8StyleButton((UIControl *)self);
 }
 
 #pragma mark - Panel glass overlay

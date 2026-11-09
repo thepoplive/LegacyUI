@@ -685,10 +685,10 @@ static NSArray *CUIPagesConfig(void) {
     CGFloat dotCx = contentW / 2.0 - 20.0;
     for (int i = 0; i < [_dots count]; i++) {
         BOOL on = (i == currentPage);
-        _dots[i].frame = CGRectMake(dotCx + i * 20.0, dotY,
-                                    on ? 14.0 : 5.0, 5.0);
-        _dots[i].backgroundColor = on ? [UIColor whiteColor]
-                                     : [UIColor colorWithWhite:1.0 alpha:0.4];
+        UIView *dot = (UIView *)_dots[i];
+        dot.frame = CGRectMake(dotCx + i * 20.0, dotY, on ? 14.0 : 5.0, 5.0);
+        dot.backgroundColor = on ? [UIColor whiteColor]
+                                 : [UIColor colorWithWhite:1.0 alpha:0.4];
     }
     y += cardH + kSheetGap;
 
@@ -811,22 +811,24 @@ static NSArray *CUIPagesConfig(void) {
     NSInteger page = (NSInteger)lround(scrollView.contentOffset.x / pageW);
     for (int i = 0; i < [_dots count]; i++) {
         BOOL on = (i == page);
-        CGRect f = _dots[i].frame;
+        UIView *dot = (UIView *)_dots[i];
+        CGRect f = dot.frame;
         f.size.width = on ? 14.0 : 5.0;
-        _dots[i].frame = f;
-        _dots[i].backgroundColor = on ? [UIColor whiteColor]
-                                     : [UIColor colorWithWhite:1.0 alpha:0.4];
+        dot.frame = f;
+        dot.backgroundColor = on ? [UIColor whiteColor]
+                                 : [UIColor colorWithWhite:1.0 alpha:0.4];
     }
 }
 
 - (void)syncDots:(NSInteger)page {
     for (int i = 0; i < [_dots count]; i++) {
         BOOL on = (i == page);
-        CGRect f = _dots[i].frame;
+        UIView *dot = (UIView *)_dots[i];
+        CGRect f = dot.frame;
         f.size.width = on ? 14.0 : 5.0;
-        _dots[i].frame = f;
-        _dots[i].backgroundColor = on ? [UIColor whiteColor]
-                                     : [UIColor colorWithWhite:1.0 alpha:0.4];
+        dot.frame = f;
+        dot.backgroundColor = on ? [UIColor whiteColor]
+                                 : [UIColor colorWithWhite:1.0 alpha:0.4];
     }
 }
 

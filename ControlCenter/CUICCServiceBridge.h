@@ -28,6 +28,12 @@
 - (BOOL)doNotDisturbEnabled;
 - (void)setDoNotDisturbEnabled:(BOOL)enabled;
 
+- (BOOL)torchEnabled;          // iOS 8 CC driver; NO on iOS 6 (no LED)
+- (void)setTorchEnabled:(BOOL)enabled;
+
+- (BOOL)orientationLocked;     // iOS 8 CC driver; NO on iOS 6
+- (void)setOrientationLocked:(BOOL)locked;
+
 #pragma mark Brightness (verified: SpringBoard setBacklightFactor:, ivar _currentBacklightLevel)
 
 - (float)brightness;
@@ -40,5 +46,9 @@
 - (BOOL)mediaPlaying;
 - (void)mediaTogglePlayPause;
 - (void)mediaSkip:(int)direction; // -1 previous, +1 next
+- (float)mediaTrackProgress;                 // 0..1
+- (void)mediaSetTrackProgress:(float)progress;
+- (NSString *)mediaTrackElapsedString;       // "m:ss"
+- (NSString *)mediaTrackDurationString;      // "m:ss"
 
 @end

@@ -14,7 +14,17 @@ typedef enum {
     CUICCIconPrev,
     CUICCIconNext,
     CUICCIconGear,
-    CUICCIconLock
+    CUICCIconLock,
+    CUICCIconVPN,
+    CUICCIconRotation,
+    CUICCIconTorch,
+    CUICCIconRecord,
+    CUICCIconTimer,
+    CUICCIconCalc,
+    CUICCIconCamera,
+    CUICCIconPower,
+    CUICCIconHeart,
+    CUICCIconBack
 } CUICCIcon;
 
 UIImage *CUICCIconImage(CUICCIcon icon, CGSize size, UIColor *color);

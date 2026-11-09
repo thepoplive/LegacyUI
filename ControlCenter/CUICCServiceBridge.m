@@ -1,9 +1,65 @@
 #import "CUICCServiceBridge.h"
+#import "../Core/CUICompatibility.h"
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <unistd.h>
 #import <CoreFoundation/CoreFoundation.h>
+
+#pragma mark iOS 8 native CC module drivers
+
+// iOS 8: Apple's own Control Center toggle drivers (SBCCSettingModule
+// subclasses, verified in the 8.0 dumps): state / toggleState / activate.
+// Routing through them gives the REAL system behavior for Wi-Fi,
+// Bluetooth, DND, flashlight and orientation lock.
+static NSMutableDictionary *s_ccModules = nil;
+
+static id CUICCModuleFor(NSString *className) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ s_ccModules = [[NSMutableDictionary alloc] init]; });
+
+    @synchronized (s_ccModules) {
+        id cached = s_ccModules[className];
+        if (cached && cached != [NSNull null]) return cached;
+        if (cached == [NSNull null]) return nil;
+
+        Class cls = NSClassFromString(className);
+        if (!cls) {
+            s_ccModules[className] = [NSNull null];
+            return nil;
+        }
+        id instance = [[cls alloc] init];
+        if (!instance) {
+            s_ccModules[className] = [NSNull null];
+            return nil;
+        }
+        if ([instance respondsToSelector:@selector(warmup)]) {
+            [instance performSelector:@selector(warmup)];
+        }
+        if ([instance respondsToSelector:@selector(activate)]) {
+            [instance performSelector:@selector(activate)];
+        }
+        s_ccModules[className] = instance;
+        return instance;
+    }
+}
+
+static BOOL CUICCModuleOn(NSString *className) {
+    id module = CUICCModuleFor(className);
+    if (![module respondsToSelector:@selector(state)]) return NO;
+    int state = ((int (*)(id, SEL))objc_msgSend)(module, @selector(state));
+    return state != 0;
+}
+
+static void CUICCModuleSet(NSString *className, BOOL on) {
+    id module = CUICCModuleFor(className);
+    if (![module respondsToSelector:@selector(toggleState)]) return;
+    BOOL isOn = NO;
+    if ([module respondsToSelector:@selector(state)]) {
+        isOn = ((int (*)(id, SEL))objc_msgSend)(module, @selector(state)) != 0;
+    }
+    if (isOn != on) [module performSelector:@selector(toggleState)];
+}
 
 static id CUICCSharedInstanceFor(NSString *className, NSString *sharedSelector) {
     Class cls = NSClassFromString(className);
@@ -227,12 +283,17 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 #pragma mark Bluetooth (verified: BluetoothManager.h iOS 6.1)
 
 - (BOOL)bluetoothEnabled {
+    if (!CUIIsiOS6OrEarlier()) return CUICCModuleOn(@"SBCCBluetoothSetting");
     id manager = CUICCSharedInstanceFor(@"BluetoothManager", @"sharedInstance");
     if (!CUICCResponds(manager, @"powered")) return NO;
     return ((BOOL (*)(id, SEL))objc_msgSend)(manager, @selector(powered));
 }
 
 - (void)setBluetoothEnabled:(BOOL)enabled {
+    if (!CUIIsiOS6OrEarlier()) {
+        CUICCModuleSet(@"SBCCBluetoothSetting", enabled);
+        return;
+    }
     id manager = CUICCSharedInstanceFor(@"BluetoothManager", @"sharedInstance");
     if (!CUICCResponds(manager, @"setPowered:")) return;
     ((void (*)(id, SEL, BOOL))objc_msgSend)(manager, @selector(setPowered:), enabled);
@@ -241,7 +302,7 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 #pragma mark Airplane (verified: RadiosPreferences.h AppSupport iOS 6.1)
 
 - (BOOL)airplaneMode {
-    // No shared instance — create fresh, read, release (ARC).
+    if (!CUIIsiOS6OrEarlier()) return CUICCModuleOn(@"SBCCAirplaneModeSetting");
     Class cls = NSClassFromString(@"RadiosPreferences");
     if (!cls) return NO;
     id prefs = [[cls alloc] init];
@@ -268,12 +329,17 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 }
 
 - (BOOL)wiFiEnabled {
+    if (!CUIIsiOS6OrEarlier()) return CUICCModuleOn(@"SBCCWiFiSetting");
     id manager = [self wiFiManager];
     if (!CUICCResponds(manager, @"wiFiEnabled")) return NO;
     return ((BOOL (*)(id, SEL))objc_msgSend)(manager, @selector(wiFiEnabled));
 }
 
 - (void)setWiFiEnabled:(BOOL)enabled {
+    if (!CUIIsiOS6OrEarlier()) {
+        CUICCModuleSet(@"SBCCWiFiSetting", enabled);
+        return;
+    }
     id manager = [self wiFiManager];
     if (!CUICCResponds(manager, @"setWiFiEnabled:")) return;
     ((void (*)(id, SEL, BOOL))objc_msgSend)(manager, @selector(setWiFiEnabled:), enabled);
@@ -293,6 +359,7 @@ static void CUICCReadLiveStates(NSMutableString *out) {
 // Settings.app writes the mobile user domain; SpringBoard does NOT re-read
 // the AnyUser (root) file, so the status-bar moon never shows. Match Settings.
 - (BOOL)doNotDisturbEnabled {
+    if (!CUIIsiOS6OrEarlier()) return CUICCModuleOn(@"SBCCDoNotDisturbSetting");
     CFPropertyListRef value = CFPreferencesCopyAppValue(
         (CFStringRef)@"dndEnabled", (CFStringRef)@"com.apple.DoNotDisturb");
     if (value) {
@@ -338,6 +405,11 @@ static float s_lastBrightness = 0.0;
 }
 
 - (float)brightness {
+    if (!CUIIsiOS6OrEarlier()) {
+        float value = (float)[UIScreen mainScreen].brightness;
+        if (value > 0.001f) return value;
+        return s_lastBrightness > 0.0f ? s_lastBrightness : 0.5f;
+    }
     id app = [UIApplication sharedApplication];
     Ivar ivar = class_getInstanceVariable([app class], "_currentBacklightLevel");
     if (ivar) {
@@ -348,6 +420,11 @@ static float s_lastBrightness = 0.0;
 }
 
 - (void)setBrightness:(float)level {
+    if (!CUIIsiOS6OrEarlier()) {
+        [UIScreen mainScreen].brightness = level;
+        s_lastBrightness = level;
+        return;
+    }
     id controller = [self brightnessController];
     // _setBrightnessLevel:showHUD: / setBrightnessLevel: verified in
     // SBBrightnessController.h (iOS 6.1) — the system path SpringBoard uses
@@ -362,7 +439,29 @@ static float s_lastBrightness = 0.0;
     s_lastBrightness = level;
 }
 
-#pragma mark Media (verified: SBMediaController.h iOS 6.1)
+#pragma mark Torch / rotation lock (iOS 8 CC drivers; no-op on iOS 6)
+
+- (BOOL)torchEnabled {
+    if (CUIIsiOS6OrEarlier()) return NO; // 3GS has no LED flash
+    return CUICCModuleOn(@"SBCCFlashlightSetting");
+}
+
+- (void)setTorchEnabled:(BOOL)enabled {
+    if (CUIIsiOS6OrEarlier()) return;
+    CUICCModuleSet(@"SBCCFlashlightSetting", enabled);
+}
+
+- (BOOL)orientationLocked {
+    if (CUIIsiOS6OrEarlier()) return NO;
+    return CUICCModuleOn(@"SBCCOrientationLockSetting");
+}
+
+- (void)setOrientationLocked:(BOOL)locked {
+    if (CUIIsiOS6OrEarlier()) return;
+    CUICCModuleSet(@"SBCCOrientationLockSetting", locked);
+}
+
+#pragma mark Media (verified: SBMediaController.h iOS 6.1 + 8.0)
 
 - (id)mediaController {
     return CUICCSharedInstanceFor(@"SBMediaController", @"sharedInstance");
@@ -408,6 +507,55 @@ static float s_lastBrightness = 0.0;
     if (CUICCResponds(controller, @"changeTrack:")) {
         ((void (*)(id, SEL, int))objc_msgSend)(controller, @selector(changeTrack:), direction);
     }
+}
+
+// Verified by the on-device probe: -trackElapsedTime, -trackDuration,
+// -setCurrentTrackTime:.
+static NSString *CUICCFormatSeconds(double seconds) {
+    if (seconds < 0 || seconds > 3600 * 24) return @"0:00";
+    int total = (int)lround(seconds);
+    return [NSString stringWithFormat:@"%d:%02d", total / 60, total % 60];
+}
+
+- (double)mediaTrackDuration {
+    id controller = [self mediaController];
+    if (!CUICCResponds(controller, @"trackDuration")) return 0.0;
+    return ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackDuration));
+}
+
+- (double)mediaTrackElapsed {
+    id controller = [self mediaController];
+    if (!CUICCResponds(controller, @"trackElapsedTime")) return 0.0;
+    return ((double (*)(id, SEL))objc_msgSend)(controller, @selector(trackElapsedTime));
+}
+
+- (float)mediaTrackProgress {
+    double duration = [self mediaTrackDuration];
+    if (duration <= 1.0) return 0.0;
+    double progress = [self mediaTrackElapsed] / duration;
+    if (progress < 0) progress = 0;
+    if (progress > 1) progress = 1;
+    return (float)progress;
+}
+
+- (void)mediaSetTrackProgress:(float)progress {
+    if (progress < 0) progress = 0;
+    if (progress > 1) progress = 1;
+    double duration = [self mediaTrackDuration];
+    if (duration <= 0) return;
+    id controller = [self mediaController];
+    if (CUICCResponds(controller, @"setCurrentTrackTime:")) {
+        ((void (*)(id, SEL, double))objc_msgSend)(controller,
+            @selector(setCurrentTrackTime:), duration * progress);
+    }
+}
+
+- (NSString *)mediaTrackElapsedString {
+    return CUICCFormatSeconds([self mediaTrackElapsed]);
+}
+
+- (NSString *)mediaTrackDurationString {
+    return CUICCFormatSeconds([self mediaTrackDuration]);
 }
 
 @end
